@@ -1000,13 +1000,28 @@ function makeCanvas(w, h) {
 }
 
 /**
+ * Atlas tile size for a quality tier. With 52 tiles on an 8x8 grid this is
+ * 2048/1536/1024 px of atlas, i.e. 16/9/4 MB uploaded — the single biggest
+ * texture allocation the game makes, so it scales with the tier like
+ * everything else.
+ */
+export function atlasTileSize(tierName) {
+  return tierName === 'low' ? 128 : tierName === 'medium' ? 192 : 256;
+}
+
+/**
  * Build the albedo + emissive atlases.
  * @returns {{map:THREE.Texture, emissive:THREE.Texture, rects:Float32Array, grid:number, tileCount:number}}
  */
-export function buildAtlas(tileSize = 256, seed = 0xa057) {
+export function buildAtlas(tileSize = 256, seed = 0xa057, opts = {}) {
   const count = TILE_DEFS.length;
   const grid = Math.ceil(Math.sqrt(count));
   const size = grid * tileSize;
+
+  // A baked albedo (see bakedatlas.js) replaces the day pass wholesale — same
+  // layout, same rects, so nothing downstream can tell the difference except
+  // that boot is faster, because half the tiles no longer get painted.
+  const baked = opts.albedo && opts.albedo.width === size ? opts.albedo : null;
 
   const dayC = makeCanvas(size, size);
   const nightC = makeCanvas(size, size);
@@ -1024,7 +1039,7 @@ export function buildAtlas(tileSize = 256, seed = 0xa057) {
     const gx = i % grid, gy = Math.floor(i / grid);
     const px = gx * tileSize, py = gy * tileSize;
 
-    for (const night of [false, true]) {
+    for (const night of (baked ? [true] : [false, true])) {
       tileCtx.setTransform(1, 0, 0, 1, 0, 0);
       tileCtx.clearRect(0, 0, tileSize, tileSize);
       tileCtx.globalAlpha = 1;
@@ -1053,7 +1068,8 @@ export function buildAtlas(tileSize = 256, seed = 0xa057) {
   // default upload flips the whole atlas vertically, which silently shifts
   // every lookup to its mirror row — grass renders as brick, asphalt as
   // glass, gravel roofs as tree bark.
-  const map = new THREE.CanvasTexture(dayC);
+  const map = baked ? new THREE.Texture(baked) : new THREE.CanvasTexture(dayC);
+  map.needsUpdate = true;
   map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
   map.flipY = false;
@@ -1069,7 +1085,11 @@ export function buildAtlas(tileSize = 256, seed = 0xa057) {
   emissive.minFilter = THREE.LinearMipmapLinearFilter;
   emissive.magFilter = THREE.LinearFilter;
 
-  return { map, emissive, rects, grid, tileCount: count, size, tileSize, names: TILE_DEFS.map(t => t.name) };
+  return {
+    map, emissive, rects, grid, tileCount: count, size, tileSize,
+    baked: !!baked,
+    names: TILE_DEFS.map(t => t.name),
+  };
 }
 
 /* ------------------------------------------------------------------ */

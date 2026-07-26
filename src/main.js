@@ -6,6 +6,8 @@ import { Engine } from './core/engine.js';
 import { Input } from './core/input.js';
 import { benchmarkGPU, PerfGovernor } from './core/perf.js';
 import { Sky } from './gfx/sky.js';
+import { loadBakedAlbedo } from './gfx/bakedatlas.js';
+import { atlasTileSize } from './gfx/textures.js';
 import { World } from './world/world.js';
 import { Player } from './player/controller.js';
 import { placeName } from './world/austin.js';
@@ -51,6 +53,12 @@ async function main() {
   const sky = new Sky(engine.scene, { startHour: 17.6, dayLengthSeconds: 1800 });
 
   const world = new World(engine, settings, 'austin-1839');
+  // Only now do we know the tier, and therefore which size of baked art to
+  // ask for. Missing or unreachable art is not an error — buildAtlas paints
+  // every tile itself in that case, which is the shipped default.
+  setProgress(3, 'Loading materials');
+  world.bakedAlbedo = await loadBakedAlbedo(atlasTileSize(settings.tierName));
+  if (world.bakedAlbedo) console.info('[art] baked atlas in use');
   await world.generate(setProgress);
 
   const player = new Player(world, input, engine.camera, settings);

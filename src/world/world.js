@@ -1,7 +1,7 @@
 // World orchestrator: builds downtown Austin once, into merged chunk meshes.
 
 import * as THREE from 'three';
-import { buildAtlas, TILE } from '../gfx/textures.js';
+import { buildAtlas, atlasTileSize, TILE } from '../gfx/textures.js';
 import {
   createCityMaterial, createWaterMaterial, MeshBuilder, setAnisotropy,
 } from '../gfx/materials.js';
@@ -89,8 +89,8 @@ export class World {
 
     await step(4, 'Painting surfaces', () => {
       configureDetail(this.settings.tier);
-      const size = this.settings.tierName === 'low' ? 128 : this.settings.tierName === 'medium' ? 192 : 256;
-      this.atlas = buildAtlas(size, 0xa057);
+      const size = atlasTileSize(this.settings.tierName);
+      this.atlas = buildAtlas(size, 0xa057, { albedo: this.bakedAlbedo });
       setAnisotropy(this.atlas.map, this.engine.maxAnisotropy);
       setAnisotropy(this.atlas.emissive, this.engine.maxAnisotropy);
       this.cityMat = createCityMaterial(this.atlas);

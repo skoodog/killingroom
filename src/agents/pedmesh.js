@@ -19,7 +19,15 @@ export const BONE = {
   ULEG_L: 7, LLEG_L: 8, ULEG_R: 9, LLEG_R: 10,
 };
 
-export const PART = { SKIN: 0, HAIR: 1, TOP: 2, BOTTOM: 3, SHOE: 4, ACCENT: 5 };
+// 0–5 read a packed per-instance colour. 6–8 are derived in the shader from
+// the skin and hair colours, so a face costs no extra instance attributes.
+export const PART = {
+  SKIN: 0, HAIR: 1, TOP: 2, BOTTOM: 3, SHOE: 4, ACCENT: 5,
+  EYE: 6, IRIS: 7, LIP: 8,
+};
+
+/** `aLod` levels: 0 is always drawn, 1 collapses past `FACE_LOD_DIST`. */
+export const FACE_LOD_DIST = 34;
 
 // Joint pivots for a 1.0-scale (≈1.78 m) person.
 const HIP_L = [0.105, 0.88, 0];
@@ -56,12 +64,12 @@ function pivotFor(bone) {
 class PedBuilder {
   constructor() {
     this.pos = []; this.nrm = []; this.bone = []; this.part = [];
-    this.pivot = []; this.acc = []; this.idx = []; this.n = 0;
+    this.pivot = []; this.acc = []; this.lod = []; this.idx = []; this.n = 0;
   }
 
   /** A tapered box: sizes may differ top and bottom, which is enough to
    *  make limbs and torsos read as bodies rather than blocks. */
-  box(cx, cy, cz, sx, sy, sz, bone, part, acc = 0, taper = 1, lean = 0) {
+  box(cx, cy, cz, sx, sy, sz, bone, part, acc = 0, taper = 1, lean = 0, lod = 0) {
     const p = pivotFor(bone);
     const x0 = -sx / 2, x1 = sx / 2;
     const y0 = cy - sy / 2, y1 = cy + sy / 2;
@@ -91,6 +99,7 @@ class PedBuilder {
         this.part.push(part);
         this.pivot.push(p[0], p[1], p[2]);
         this.acc.push(acc);
+        this.lod.push(lod);
       }
       this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       this.n += 4;
@@ -103,7 +112,7 @@ class PedBuilder {
    * Lego, because the silhouette curves instead of stepping.
    */
   limb(cx, cy, cz, rx, rz, h, seg, bone, part, acc = 0, opts = {}) {
-    const { taper = 1, capTop = true, capBottom = true, rot = 0, lean = 0, squash = 1 } = opts;
+    const { taper = 1, capTop = true, capBottom = true, rot = 0, lean = 0, squash = 1, lod = 0 } = opts;
     const p = pivotFor(bone);
     const n = Math.max(3, seg | 0);
     const y0 = cy - h / 2, y1 = cy + h / 2;
@@ -112,6 +121,7 @@ class PedBuilder {
       this.nrm.push(nx, ny, nz);
       this.bone.push(bone); this.part.push(part);
       this.pivot.push(p[0], p[1], p[2]); this.acc.push(acc);
+      this.lod.push(lod);
     };
     for (let i = 0; i < n; i++) {
       const a0 = rot + (i / n) * Math.PI * 2;
@@ -156,6 +166,7 @@ class PedBuilder {
     g.setAttribute('aPart', new THREE.Float32BufferAttribute(this.part, 1));
     g.setAttribute('aPivot', new THREE.Float32BufferAttribute(this.pivot, 3));
     g.setAttribute('aAcc', new THREE.Float32BufferAttribute(this.acc, 1));
+    g.setAttribute('aLod', new THREE.Float32BufferAttribute(this.lod, 1));
     // stock Lambert wants a colour attribute; ours is overwritten in the shader
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(this.n * 3).fill(1), 3));
     g.setIndex(this.idx);
@@ -199,15 +210,24 @@ export function buildPedGeometry() {
   b.limb(0, 0.72, 0, 0.20, 0.15, 0.46, TRUNK, BONE.PELVIS, T, ACC_SLOT.DRESS, { taper: 1.34 });
 
   // ---- pelvis + torso -------------------------------------------------
-  b.limb(0, 0.945, 0, 0.152, 0.102, 0.17, TRUNK, BONE.PELVIS, B, 0, { taper: 1.04 });
-  b.limb(0, 1.12, 0, 0.158, 0.106, 0.20, TRUNK, BONE.TORSO, T, 0, { taper: 0.97, capBottom: false });
-  b.limb(0, 1.29, 0, 0.153, 0.103, 0.16, TRUNK, BONE.TORSO, T, 0, { taper: 1.16, capBottom: false });
-  b.limb(0, 1.398, 0, 0.178, 0.118, 0.15, TRUNK, BONE.TORSO, T, 0, { taper: 0.88, capBottom: false });
+  // Five rings, because a torso is not a barrel: the hips are wide, the waist
+  // pulls in above them, the ribcage flares back out, and the trapezius slopes
+  // from the shoulder up into the neck instead of meeting it at a right angle.
+  b.limb(0, 0.945, 0, 0.150, 0.102, 0.17, TRUNK, BONE.PELVIS, B, 0, { taper: 0.94 });
+  b.limb(0, 1.075, 0, 0.138, 0.094, 0.10, TRUNK, BONE.TORSO, T, 0, { taper: 1.10, capBottom: false });
+  b.limb(0, 1.185, 0, 0.152, 0.103, 0.13, TRUNK, BONE.TORSO, T, 0, { taper: 1.10, capBottom: false });
+  b.limb(0, 1.310, 0, 0.167, 0.113, 0.13, TRUNK, BONE.TORSO, T, 0, { taper: 1.06, capBottom: false });
+  b.limb(0, 1.415, 0, 0.180, 0.120, 0.09, TRUNK, BONE.TORSO, T, 0, { taper: 0.86, capBottom: false });
   if (detailed) {
     // shirt placket and collar — small, but they read at conversation range
     b.box(0.0, 1.20, 0.108, 0.036, 0.30, 0.022, BONE.TORSO, T, 0, 1);
-    b.limb(0, 1.455, 0, 0.108, 0.078, 0.05, TRUNK, BONE.TORSO, T, 0, { taper: 0.86 });
+    b.limb(0, 1.462, 0, 0.108, 0.078, 0.05, TRUNK, BONE.TORSO, T, 0, { taper: 0.86 });
     b.box(0, 1.02, 0, 0.33, 0.045, 0.225, BONE.PELVIS, A, 0, 1.0);         // waistband
+    // collar points and the shoulder seam, both lod 1
+    for (const sx of [-1, 1]) {
+      b.box(sx * 0.052, 1.446, 0.070, 0.060, 0.040, 0.030, BONE.TORSO, T, 0, 1, 0, 1);
+      b.box(sx * 0.150, 1.432, 0, 0.070, 0.026, 0.130, BONE.TORSO, T, 0, 1, 0, 1);
+    }
   }
   // Patagonia-style vest
   b.limb(0, 1.24, 0, 0.188, 0.128, 0.42, TRUNK, BONE.TORSO, A, ACC_SLOT.VEST, { taper: 1.0 });
@@ -233,28 +253,59 @@ export function buildPedGeometry() {
   }
 
   // ---- head ------------------------------------------------------------
-  b.limb(0, 1.495, 0, 0.045, 0.042, 0.075, 6, BONE.HEAD, S, 0, { taper: 1.1 });
-  // cranium and jaw as two stacked prisms, so the head has a chin
-  b.limb(0, 1.585, 0.004, 0.078, 0.088, 0.10, TRUNK, BONE.HEAD, S, 0, { taper: 1.12, capBottom: false });
-  b.limb(0, 1.685, 0.002, 0.088, 0.098, 0.10, TRUNK, BONE.HEAD, S, 0, { taper: 0.88, capBottom: false });
+  // The skull is five stacked rings rather than two, because the thing that
+  // makes a head read as a head is the curve from cheekbone to crown: the
+  // widest point is at the temples, and everything narrows above and below it.
+  // Chin sits at 1.528 and the crown at 1.762 — a 0.234 m head on a 1.78 m
+  // body, which is the ~1:7.6 ratio adults actually have.
+  b.limb(0, 1.494, 0, 0.046, 0.044, 0.084, LIMB, BONE.HEAD, S, 0, { taper: 1.08 });
+  b.limb(0, 1.559, 0.008, 0.062, 0.074, 0.062, TRUNK, BONE.HEAD, S, 0, { taper: 1.32, capBottom: false }); // jaw
+  b.limb(0, 1.618, 0.004, 0.082, 0.094, 0.056, TRUNK, BONE.HEAD, S, 0, { taper: 1.12, capBottom: false }); // cheek
+  b.limb(0, 1.673, 0.000, 0.092, 0.100, 0.054, TRUNK, BONE.HEAD, S, 0, { taper: 0.98, capBottom: false }); // brow
+  b.limb(0, 1.720, -0.002, 0.090, 0.096, 0.040, TRUNK, BONE.HEAD, S, 0, { taper: 0.82, capBottom: false }); // upper skull
+  b.limb(0, 1.751, -0.004, 0.074, 0.082, 0.022, TRUNK, BONE.HEAD, S, 0, { taper: 0.54, capBottom: false }); // crown
+
   if (detailed) {
-    b.box(0, 1.635, 0.098, 0.030, 0.038, 0.030, BONE.HEAD, S);            // nose
-    b.box(0, 1.678, 0.092, 0.098, 0.018, 0.020, BONE.HEAD, H);            // brow
+    // Face. All of it is marked lod 1, so it collapses to zero area beyond
+    // conversation range and in the shadow pass — you never pay to rasterise
+    // an eyelid you cannot see.
+    const F = 1;
+    b.box(0, 1.668, 0.094, 0.022, 0.050, 0.024, BONE.HEAD, S, 0, 1, 0, F);   // nose bridge
+    b.box(0, 1.638, 0.100, 0.028, 0.024, 0.032, BONE.HEAD, S, 0, 1, 0, F);   // nose tip
+    b.box(0, 1.556, 0.076, 0.052, 0.030, 0.032, BONE.HEAD, S, 0, 1, 0, F);   // chin
+    b.box(0, 1.594, 0.088, 0.044, 0.011, 0.016, BONE.HEAD, PART.LIP, 0, 1, 0, F);
+    b.box(0, 1.582, 0.087, 0.040, 0.013, 0.016, BONE.HEAD, PART.LIP, 0, 1, 0, F);
     for (const sx of [-1, 1]) {
-      b.box(sx * 0.088, 1.632, -0.004, 0.020, 0.048, 0.036, BONE.HEAD, S); // ears
+      b.box(sx * 0.038, 1.664, 0.086, 0.032, 0.017, 0.014, BONE.HEAD, PART.EYE, 0, 1, 0, F);
+      b.box(sx * 0.038, 1.662, 0.094, 0.014, 0.014, 0.008, BONE.HEAD, PART.IRIS, 0, 1, 0, F);
+      b.box(sx * 0.041, 1.686, 0.090, 0.046, 0.013, 0.020, BONE.HEAD, H, 0, 1, 0, F);      // brow
+      b.box(sx * 0.070, 1.652, 0.062, 0.030, 0.026, 0.040, BONE.HEAD, S, 0, 1, 0, F);      // cheekbone
+      b.limb(sx * 0.092, 1.652, -0.002, 0.011, 0.026, 0.050, 6, BONE.HEAD, S, 0,
+        { taper: 0.86, lod: F });                                                          // ear
+      b.box(sx * 0.092, 1.622, 0.002, 0.016, 0.020, 0.024, BONE.HEAD, S, 0, 1, 0, F);      // lobe
     }
   }
-  // hair
-  b.limb(0, 1.728, 0, 0.094, 0.102, 0.072, TRUNK, BONE.HEAD, H, 0, { taper: 0.82 });
-  b.box(0, 1.60, -0.088, 0.17, 0.16, 0.05, BONE.HEAD, H, 0);
-  b.limb(0, 1.50, -0.10, 0.10, 0.055, 0.30, 8, BONE.HEAD, H, ACC_SLOT.LONGHAIR, { taper: 0.9 });
-  b.box(0, 1.545, 0.075, 0.135, 0.075, 0.055, BONE.HEAD, H, ACC_SLOT.BEARD);
+
+  // ---- hair -------------------------------------------------------------
+  // A cap alone reads as a swim cap. What makes hair read as hair is a
+  // hairline across the forehead, mass at the back of the skull, and the
+  // sideburn edge in front of the ear.
+  b.limb(0, 1.734, -0.004, 0.093, 0.100, 0.064, TRUNK, BONE.HEAD, H, 0, { taper: 0.49 });
+  b.box(0, 1.706, 0.066, 0.150, 0.034, 0.072, BONE.HEAD, H);                  // hairline
+  b.box(0, 1.668, -0.074, 0.160, 0.110, 0.048, BONE.HEAD, H);                 // occiput
+  if (detailed) {
+    for (const sx of [-1, 1]) {
+      b.box(sx * 0.082, 1.668, 0.006, 0.020, 0.062, 0.074, BONE.HEAD, H, 0, 1, 0, 1);
+    }
+  }
+  b.limb(0, 1.520, -0.096, 0.105, 0.058, 0.30, 8, BONE.HEAD, H, ACC_SLOT.LONGHAIR, { taper: 0.92 });
+  b.box(0, 1.560, 0.072, 0.140, 0.082, 0.060, BONE.HEAD, H, ACC_SLOT.BEARD);
   // ball cap
-  b.limb(0, 1.748, 0, 0.098, 0.104, 0.082, TRUNK, BONE.HEAD, A, ACC_SLOT.BALLCAP, { taper: 0.8 });
-  b.box(0, 1.714, 0.135, 0.185, 0.028, 0.13, BONE.HEAD, A, ACC_SLOT.BALLCAP, 0.85);
+  b.limb(0, 1.744, -0.002, 0.098, 0.104, 0.080, TRUNK, BONE.HEAD, A, ACC_SLOT.BALLCAP, { taper: 0.78 });
+  b.box(0, 1.710, 0.140, 0.185, 0.026, 0.135, BONE.HEAD, A, ACC_SLOT.BALLCAP, 0.85);
   // wide-brim / cowboy hat
-  b.limb(0, 1.762, 0, 0.104, 0.108, 0.125, TRUNK, BONE.HEAD, A, ACC_SLOT.HAT, { taper: 0.86 });
-  b.limb(0, 1.702, 0, 0.225, 0.215, 0.032, TRUNK, BONE.HEAD, A, ACC_SLOT.HAT, { taper: 1.0 });
+  b.limb(0, 1.766, 0, 0.104, 0.108, 0.126, TRUNK, BONE.HEAD, A, ACC_SLOT.HAT, { taper: 0.86 });
+  b.limb(0, 1.706, 0, 0.228, 0.218, 0.030, TRUNK, BONE.HEAD, A, ACC_SLOT.HAT, { taper: 1.0 });
 
   // ---- carried things ---------------------------------------------------
   b.box(0, 1.22, -0.205, 0.30, 0.40, 0.16, BONE.TORSO, A, ACC_SLOT.BACKPACK, 0.95);
@@ -282,6 +333,7 @@ attribute float aBone;
 attribute float aPart;
 attribute vec3  aPivot;
 attribute float aAcc;
+attribute float aLod;
 
 attribute vec4 aInst;   // x, y, z, yaw
 attribute vec4 aAnim;   // phase, speed, flags, state
@@ -310,7 +362,7 @@ mat3 rotZ(float a) {
 }
 `;
 
-const PED_VERT = /* glsl */`
+const pedVert = (isDepth) => /* glsl */`
   float _bone = aBone;
   float _flags = aAnim.z;
   float _state = aAnim.w;
@@ -321,6 +373,13 @@ const PED_VERT = /* glsl */`
   if (aAcc > 0.5) {
     float bit = exp2(aAcc - 1.0);
     if (mod(floor(_flags / bit), 2.0) < 0.5) _hidden = true;
+  }
+  // Face and garment micro-detail collapses to zero area beyond conversation
+  // range, and never takes part in the shadow pass — rasterising an iris at
+  // eighty metres, or its shadow at any distance, is pure waste.
+  if (aLod > 0.5) {
+    ${isDepth ? '_hidden = true;'
+      : `if (distance(aInst.xyz, cameraPosition) > ${FACE_LOD_DIST.toFixed(1)}) _hidden = true;`}
   }
   // Trousers hide when wearing shorts, and vice versa.
   float shortsBit = exp2(float(${ACC_SLOT.SHORTS} - 1));
@@ -408,13 +467,21 @@ const PED_VERT = /* glsl */`
   vec3 _pedNormal = normalize(Y * M * normal);
 
   // ---- colour --------------------------------------------------------
+  vec3 _skin = unpackCol(aColA.x);
+  vec3 _hair = unpackCol(aColA.y);
   vec3 pc;
-  if (aPart < 0.5) pc = unpackCol(aColA.x);
-  else if (aPart < 1.5) pc = unpackCol(aColA.y);
+  if (aPart < 0.5) pc = _skin;
+  else if (aPart < 1.5) pc = _hair;
   else if (aPart < 2.5) pc = unpackCol(aColA.z);
   else if (aPart < 3.5) pc = unpackCol(aColB.x);
   else if (aPart < 4.5) pc = unpackCol(aColB.y);
-  else pc = unpackCol(aColB.z);
+  else if (aPart < 5.5) pc = unpackCol(aColB.z);
+  // Sclera is tinted towards the skin so it doesn't glow on a dark face; the
+  // iris borrows from the hair colour, which is why dark-haired people here
+  // tend to have dark eyes without costing a single extra instance attribute.
+  else if (aPart < 6.5) pc = mix(vec3(0.88, 0.87, 0.84), _skin, 0.12);
+  else if (aPart < 7.5) pc = mix(vec3(0.26, 0.17, 0.10), _hair * 0.55 + 0.05, 0.45);
+  else pc = _skin * vec3(0.88, 0.62, 0.60);
 `;
 
 /**
@@ -427,18 +494,19 @@ const PED_VERT = /* glsl */`
 export function patchPedMaterial(mat, isDepth = false) {
   mat.onBeforeCompile = (shader) => {
     let v = shader.vertexShader.replace('#include <common>', '#include <common>\n' + PED_PARS);
+    const body = pedVert(isDepth);
     if (isDepth) {
       v = v.replace('#include <begin_vertex>',
-        PED_VERT + '\n  vec3 transformed = _pedWorld;\n');
+        body + '\n  vec3 transformed = _pedWorld;\n');
     } else {
       v = v
         .replace('#include <beginnormal_vertex>',
-          PED_VERT + '\n  vColor = pc;\n  vec3 objectNormal = _pedNormal;\n')
+          body + '\n  vColor = pc;\n  vec3 objectNormal = _pedNormal;\n')
         .replace('#include <begin_vertex>', 'vec3 transformed = _pedWorld;');
     }
     shader.vertexShader = v;
   };
-  mat.customProgramCacheKey = () => (isDepth ? 'ped-depth-v1' : 'ped-v1');
+  mat.customProgramCacheKey = () => (isDepth ? 'ped-depth-v2' : 'ped-v2');
   return mat;
 }
 

@@ -2,3 +2,7 @@ node_modules/
 dist/
 shots/
 *.log
+
+# Raw 2K downloads from Higgsfield — regenerate with `npm run bake-art`.
+# The baked output in public/tex IS tracked: it is what ships.
+art/source/

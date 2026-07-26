@@ -143,6 +143,7 @@ export class Hud {
         `draws ${e.drawCalls}   tris ${(e.triangles / 1000).toFixed(0)}k\n` +
         `crowd ${game.crowd.stats.alive}/${game.crowd.budget}\n` +
         `${game.settings.tierName}  ${game.governor ? game.governor.describe() : ''}\n` +
+        `atlas ${game.world.atlas.size}px ${game.world.atlas.baked ? 'baked' : 'procedural'}\n` +
         `p95 ${game.governor ? game.governor.lastP95.toFixed(1) : '-'} ms\n` +
         `x ${p.pos.x.toFixed(0)}  z ${p.pos.z.toFixed(0)}`;
     } else if (!this.showStats && this.el.stats.textContent) {

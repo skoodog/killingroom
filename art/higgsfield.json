@@ -1,0 +1,151 @@
+{
+  "_comment": [
+    "Photographic material art generated through the Higgsfield MCP.",
+    "",
+    "Each entry maps one atlas tile (the names come from TILE in",
+    "src/gfx/textures.js) to a completed Higgsfield image job. The palettes",
+    "handed to the generator are the same hexes the procedural painter uses,",
+    "so the generated art lands in the same colour space as the fallback and",
+    "the two can be swapped without relighting anything.",
+    "",
+    "`npm run bake-art` downloads these, makes them genuinely seamless,",
+    "pulls their mean luminance towards the procedural tile they replace, and",
+    "composites them into the atlas layout. Tiles not listed here stay",
+    "procedural — window grids, signage and lamp lenses are structure, not",
+    "material, and a photograph is the wrong tool for them.",
+    "",
+    "`match` is how hard to pull the generated tile's luminance towards the",
+    "procedural one: 0 keeps the photograph as generated, 1 matches exactly."
+  ],
+  "generatedAt": "2026-07-26",
+  "cdnBase": "https://d8j0ntlcm91z4.cloudfront.net/user_33A4FtSZ53mYDotyJ5KWAsMBjtW/",
+  "tiles": [
+    {
+      "tile": "ASPHALT",
+      "job": "5ff20626-9a5f-45f9-9edc-743496e9be7c",
+      "file": "hf_20260726_045156_5ff20626-9a5f-45f9-9edc-743496e9be7c.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "ASPHALT_WORN",
+      "job": "250f4423-2423-4f53-a67c-61d487aa7433",
+      "file": "hf_20260726_045748_250f4423-2423-4f53-a67c-61d487aa7433.png",
+      "model": "nano_banana_2",
+      "reference": "5ff20626-9a5f-45f9-9edc-743496e9be7c",
+      "match": 0.7
+    },
+    {
+      "tile": "SIDEWALK",
+      "job": "37a31867-b2a3-41cb-ab98-6548ff1adf13",
+      "file": "hf_20260726_045753_37a31867-b2a3-41cb-ab98-6548ff1adf13.png",
+      "model": "recraft_v4_1",
+      "match": 0.75
+    },
+    {
+      "tile": "CONCRETE",
+      "job": "a19643bf-c278-4e43-a481-bcb546eeceb9",
+      "file": "hf_20260726_045756_a19643bf-c278-4e43-a481-bcb546eeceb9.png",
+      "model": "recraft_v4_1",
+      "match": 0.75
+    },
+    {
+      "tile": "CONCRETE_DARK",
+      "job": "0d54c58e-c3a5-44f6-9b37-9959072c89bd",
+      "file": "hf_20260726_045844_0d54c58e-c3a5-44f6-9b37-9959072c89bd.png",
+      "model": "recraft_v4_1",
+      "match": 0.75
+    },
+    {
+      "tile": "LIMESTONE",
+      "job": "2e56b2fa-e7ae-41ee-a104-a3cedbd9dd1f",
+      "file": "hf_20260726_045758_2e56b2fa-e7ae-41ee-a104-a3cedbd9dd1f.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "BRICK_RED",
+      "job": "b8ceb9b1-17ca-435a-b9f2-a08badbe5043",
+      "file": "hf_20260726_045800_b8ceb9b1-17ca-435a-b9f2-a08badbe5043.png",
+      "model": "recraft_v4_1",
+      "match": 0.65
+    },
+    {
+      "tile": "BRICK_PAVER",
+      "job": "cc1cc106-4bcc-4f5d-9e17-0ed9a1c9f59b",
+      "file": "hf_20260726_045809_cc1cc106-4bcc-4f5d-9e17-0ed9a1c9f59b.png",
+      "model": "recraft_v4_1",
+      "match": 0.65
+    },
+    {
+      "tile": "GRASS",
+      "job": "15ba7f21-9236-45b9-85cd-26d23556235f",
+      "file": "hf_20260726_045812_15ba7f21-9236-45b9-85cd-26d23556235f.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "GRASS_DRY",
+      "job": "4220551b-5293-4903-828c-f9131222b87b",
+      "file": "hf_20260726_045816_4220551b-5293-4903-828c-f9131222b87b.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "TRAIL",
+      "job": "051155e8-da44-43f0-8e1a-a9e32a0b4c4f",
+      "file": "hf_20260726_045818_051155e8-da44-43f0-8e1a-a9e32a0b4c4f.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "DIRT",
+      "job": "06b752b9-3561-411d-a621-b5f33bcb052a",
+      "file": "hf_20260726_045821_06b752b9-3561-411d-a621-b5f33bcb052a.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "ROOF_GRAVEL",
+      "job": "a5ca9d16-ce4c-4c14-8a87-44bee650cbb6",
+      "file": "hf_20260726_045823_a5ca9d16-ce4c-4c14-8a87-44bee650cbb6.png",
+      "model": "recraft_v4_1",
+      "match": 0.75
+    },
+    {
+      "tile": "ROOF_METAL",
+      "job": "6de94e8e-bb25-42f6-81de-91e788c4da69",
+      "file": "hf_20260726_045831_6de94e8e-bb25-42f6-81de-91e788c4da69.png",
+      "model": "recraft_v4_1",
+      "match": 0.55
+    },
+    {
+      "tile": "WOOD_DECK",
+      "job": "f3e1afbb-d1d9-4632-a108-d26f29c9fda7",
+      "file": "hf_20260726_045834_f3e1afbb-d1d9-4632-a108-d26f29c9fda7.png",
+      "model": "recraft_v4_1",
+      "match": 0.6
+    },
+    {
+      "tile": "BARK",
+      "job": "eab0c8a7-9760-4f20-a1aa-d76282d7d0d6",
+      "file": "hf_20260726_045836_eab0c8a7-9760-4f20-a1aa-d76282d7d0d6.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    },
+    {
+      "tile": "FOLIAGE",
+      "job": "8a579b2e-ba8d-4ed6-8cd0-aa8fdfcff344",
+      "file": "hf_20260726_045839_8a579b2e-ba8d-4ed6-8cd0-aa8fdfcff344.png",
+      "model": "recraft_v4_1",
+      "match": 0.8
+    },
+    {
+      "tile": "RUST",
+      "job": "4387b41a-78b1-4c3d-b009-13e5bff10ceb",
+      "file": "hf_20260726_045841_4387b41a-78b1-4c3d-b009-13e5bff10ceb.png",
+      "model": "recraft_v4_1",
+      "match": 0.7
+    }
+  ]
+}

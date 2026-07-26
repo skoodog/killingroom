@@ -15,7 +15,8 @@
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "smoke": "node tools/smoke.mjs",
     "debug": "node tools/debug.mjs",
-    "polycount": "node tools/polycount.mjs"
+    "polycount": "node tools/polycount.mjs",
+    "bake-art": "node tools/bake-art.mjs"
   },
   "dependencies": {
     "three": "0.180.0"

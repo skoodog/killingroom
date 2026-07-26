@@ -1,8 +1,13 @@
 # KILLING ROOM
 
 A first-person open world set in **downtown Austin, Texas** — built entirely from
-code. No models, no photographs, no textures on disk. Every building, street,
-tree, vehicle, sound and person is generated at boot from a seed.
+code. Every building, street, tree, vehicle, sound and person is generated at
+boot from a seed; there is not a single model file in the repository.
+
+Textures work the same way by default — every surface is painted with a 2D
+canvas at boot. There is also an optional pass of photographic material art,
+generated through the Higgsfield MCP and baked into the same atlas offline; see
+[The art](#the-art). The game runs identically without it.
 
 ```bash
 npm install
@@ -107,6 +112,21 @@ grids through the parks, with crossings linked at the corners. They steer
 around each other, give you personal space, stop to look at things, and scatter
 when the shooting starts.
 
+They have faces. The skull is five stacked rings — jaw, cheek, brow, upper
+skull, crown — because the thing that makes a head read as a head is the curve
+from cheekbone to temple to crown, and two boxes can't do it. On top of that
+sit eyes with irises, brows, a nose, lips, cheekbones and ears, at the ~1:7.6
+head-to-body ratio adults actually have. The sclera is tinted towards the skin
+so it doesn't glow on a dark face, and the iris borrows from the hair colour,
+so dark-haired people tend to have dark eyes — both derived in the shader,
+neither costing a single extra byte per person.
+
+None of that is paid for at a distance. Every face vertex carries an `aLod`
+bit, and beyond 34 m — or in the shadow pass, at any distance — those vertices
+collapse to zero area. So the crowd is 1,784 triangles a head when you're
+talking to someone and 1,100 when you're not, without a second mesh, a second
+draw call, or a pop.
+
 **All of them are one draw call.** The humanoid is a single box-built mesh
 where every vertex carries a bone id, a body-part id and a joint pivot; the
 whole walk cycle — hips, knees, shoulders, elbows, spine twist, head
@@ -114,6 +134,42 @@ counter-rotation, pelvis bob — is solved in the vertex shader from a per-perso
 phase. Accessories are all present in the mesh and collapse to zero area for
 anyone who doesn't have them, which is how one geometry yields hundreds of
 visibly different people.
+
+---
+
+## The art
+
+Every surface is painted from code at boot, and the game ships that way. But
+the material tiles — asphalt, sidewalk, limestone, brick, grass, decomposed
+granite, corten, live oak bark — are also available as photographic 2K art
+generated through the **Higgsfield MCP**, listed in `art/higgsfield.json` with
+the job id and prompt behind each one.
+
+The generator was handed the *same hex palettes the procedural painter uses*,
+so the photographs land in the colour space the lighting was tuned against
+rather than fighting it. `npm run bake-art` then:
+
+1. downloads the 2K originals,
+2. makes them genuinely seamless — wrap-offset by half, then heal the seam
+   cross with a feathered band lifted from clean interior pixels, because
+   "seamless" in a prompt is a request, not a guarantee, and a bad tile shows
+   up as a visible grid the moment it repeats down a hundred metres of road,
+3. pulls each one's mean luminance towards the procedural tile it replaces,
+4. downscales by repeated halving rather than one 8:1 bilinear step, and
+5. composites them into the atlas layout — same tile order, same rects, from
+   the same `buildAtlas()` the game calls, so the layout cannot drift.
+
+It writes **one atlas per tile size**: 2048² for high and ultra, 1536² for
+medium, 1024² for low. That is the point of doing it offline — texture memory
+scales with the tier on the same dial as everything else, instead of a laptop
+paying for 2K art it will never resolve. At boot the game asks for the size
+matching its tier; if `public/tex` is empty, or the file is missing, or the
+fetch times out, it paints the tiles itself and nothing else changes. `F3`
+reports which one you got.
+
+Windows, storefronts, signage and lamp lenses stay procedural on purpose:
+those are structure, not material, and a photograph is the wrong tool for a
+facade whose window grid has to line up with the geometry behind it.
 
 ---
 
@@ -210,13 +266,16 @@ number of triangles depending on what the machine can carry:
 
 | Tier | City triangles | Detail |
 |---|---|---|
-| low | ~0.55 M | box massing, flat ground, four-sided poles |
-| medium | ~1.2 M | chamfered towers, slab bands, subdivided ground |
-| high / ultra | ~1.9 M | window reveals, cornices with dentils, garage deck slabs, round trunks and limbs |
+| low | ~0.54 M | box massing, flat ground, four-sided poles |
+| medium | ~1.58 M | chamfered towers, slab bands, subdivided ground |
+| high | ~1.93 M | window reveals, cornices with dentils, garage deck slabs, round trunks and limbs |
+| ultra | ~1.98 M | as high, with the longest draw distance |
 
-Characters scale the same way: 666 triangles at low, 1,352 at high — round
-limbs that taper correctly at the joints, shoes with soles, hands with thumbs,
-collars, cuffs and belts.
+Characters scale the same way: 734 triangles at low, 1,522 at medium, 1,784 at
+high — round limbs that taper correctly at the joints, a five-ring skull with a
+face on it, shoes with soles, hands with thumbs, collars, cuffs and belts. Low
+tier drops the face and the garment trim entirely; every tier above it collapses
+them past 34 m.
 
 `npm run polycount -- high` prints the census for any tier.
 
@@ -249,6 +308,8 @@ phones.
 
 ```bash
 npm run smoke        # boot headless, screenshot 12 vantage points, fail on any console error
+npm run polycount    # triangle census per tier
+npm run bake-art     # composite the Higgsfield material art into the atlas
 node tools/debug.mjs # dump the texture atlas, overhead surveys, skyline elevations, character sheet
 ```
 
@@ -262,9 +323,11 @@ fastest way to diagnose a generation bug.
 ## Layout
 
 ```
+art/         higgsfield.json — the generated material art, job by job
 src/
   core/      rng, math, quality tiers + adaptive scaler, input, renderer, loop
   gfx/       procedural texture atlas, shared materials, mesh builder, sky
+             bakedatlas.js (optional photographic albedo, per tier)
   world/     austin.js (the map, as data) · roads · buildings · landmarks
              nature · props · bats · world.js (the generator)
   agents/    archetypes · pedmesh (the GPU-animated humanoid) · crowd · traffic
@@ -272,7 +335,7 @@ src/
   physics/   collision.js (spatial-hash AABBs, swept capsule, DDA raycast)
   audio/     Web Audio synthesis
   ui/        hud · minimap
-tools/       smoke.mjs · debug.mjs
+tools/       smoke.mjs · debug.mjs · polycount.mjs · bake-art.mjs
 ```
 
 Fictional sandbox. Geography approximates the real downtown grid; nothing here
