@@ -497,10 +497,11 @@ export function buildPedGeometry() {
   });
   // A beard follows the jaw instead of covering it: a shell over the lower
   // third of the skull, cut away above the lip line.
-  // Tops out just under the cheekbone. The first pass ran to 1.646, which is
-  // the brow line — a beard that reaches your eyebrows is a balaclava.
-  const beardT = over(1.516, 1.612);
-  b.loft(0, 1.516, 1.612, 0, 0.083, 0.102, 5, LON, BONE.HEAD, H, {
+  // Lofted up to sideburn height, then cut back to a beard line that rides
+  // high at the sideburns and drops across the front — which is where a
+  // beard actually stops. A flat horizontal top edge reads as a chinstrap.
+  const beardT = over(1.516, 1.650);
+  b.loft(0, 1.516, 1.650, 0, 0.083, 0.102, 7, LON, BONE.HEAD, H, {
     profile: (t) => skull(beardT(t)) * 1.025,
     zScale: (t) => (beardT(t) < 0.30 ? 0.86 + beardT(t) * 0.47 : 1),
     zShift: (t) => 0.011 * (0.38 - beardT(t)),
@@ -512,11 +513,13 @@ export function buildPedGeometry() {
     // interpenetrate in a ragged stripe — worse than the hard edge it was
     // meant to soften.
     rMul: (t, sx, sz) => {
-      if (sz <= 0.30) return 1;
-      const up = clamp01((t - 0.50) / 0.15);
-      const mid = 1 - clamp01((Math.abs(sx) - 0.30) / 0.18);
-      const cut = up * mid * Math.min(1, (sz - 0.30) / 0.25);
-      return cut > 0.5 ? 0.72 : 1;
+      const front = Math.max(0, sz);
+      if (t > 0.60 + 0.36 * (1 - front)) return 0.72;    // the beard line
+      // Mouth opening: an ellipse across the front, which leaves a moustache
+      // above it and hair below, instead of removing everything up to the top.
+      const dt = (t - 0.42) / 0.13;
+      const dx = sx / 0.34;
+      return (dt * dt + dx * dx < 1 && front > 0.45) ? 0.72 : 1;
     },
     acc: ACC_SLOT.BEARD,
   });

@@ -137,8 +137,16 @@ which is already on the GPU — so a crowd of varied faces costs no extra
 instance data. Every cell has a white border, which is how the other 95% of the
 body shares the texture without knowing it exists.
 
-2,642 triangles a head at high, on 3,016 vertices — *fewer* vertices than the
+2,752 triangles a head at high, on 3,064 vertices — *fewer* vertices than the
 box-built head it replaced, because a loft shares them between rings.
+
+Hair and beards are shells riding the same profile, with their edges carved by
+pulling geometry inside the skull. The hairline uses a smooth ramp and the
+beard a hard cut, which looks like an oversight and isn't: the hair shell is
+10 mm proud, so a ramp genuinely crosses the scalp and the edge lands on a
+smooth curve, while the beard is only 6 mm proud, so a ramp parks it *at* the
+surface and the two interpenetrate in a ragged stripe. Shell clearance decides
+which you want.
 
 **All of them are one draw call.** The humanoid is a single box-built mesh
 where every vertex carries a bone id, a body-part id and a joint pivot; the
@@ -284,11 +292,11 @@ number of triangles depending on what the machine can carry:
 | high | ~1.93 M | window reveals, cornices with dentils, garage deck slabs, round trunks and limbs |
 | ultra | ~1.98 M | as high, with the longest draw distance |
 
-Characters scale the same way: 734 triangles at low, 1,522 at medium, 1,784 at
-high — round limbs that taper correctly at the joints, a five-ring skull with a
-face on it, shoes with soles, hands with thumbs, collars, cuffs and belts. Low
-tier drops the face and the garment trim entirely; every tier above it collapses
-them past 34 m.
+Characters scale the same way: 804 triangles at low, 1,992 at medium, 2,752 at
+high — round limbs that taper correctly at the joints, a lofted skull with a
+painted face, shoes with soles, hands with thumbs, collars, cuffs and belts.
+Low tier drops the ears and the garment trim entirely and halves the skull's
+ring count; every tier above it collapses that detail past 34 m.
 
 `npm run polycount -- high` prints the census for any tier.
 
