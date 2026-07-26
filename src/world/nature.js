@@ -150,7 +150,12 @@ export class Forest {
     const spread = lerp(spec.spread[0], spec.spread[1], rng.next());
     const trunkH = lerp(spec.trunkH[0], spec.trunkH[1], rng.next()) * (h / spec.height[1]);
     const canopyR = h * 0.42 * spread;
-    const cy = y + trunkH + canopyR * (1 - spec.dropCrown);
+    // Live oaks really do carry their canopy low, but not so low that you
+    // walk face-first into leaves — keep the underside above head height.
+    const cy = Math.max(
+      y + trunkH + canopyR * (1 - spec.dropCrown),
+      y + canopyR * 0.74 + 2.4
+    );
     const lean = spec.lean;
 
     g.items.push({

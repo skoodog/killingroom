@@ -30,7 +30,7 @@ export function streetlight(mb, x, z, y, dir, lights, cool = false) {
   mb.box(hx, y + h - 0.55, hz, 0.9, 0.34, 0.55, pole, [0.6, 0.62, 0.64], 0.5);
   mb.box(hx, y + h - 0.78, hz, 0.72, 0.16, 0.42,
     cool ? METAL(TILE.LAMP_COOL) : METAL(TILE.LAMP), [1, 1, 1], 0.5);
-  lights.push({ x: hx, y: y + h - 0.9, z: hz, r: 9, c: cool ? 0 : 1 });
+  lights.push({ x: hx, y: y + h - 0.9, z: hz, r: 11, c: cool ? 0 : 1, gy: y });
 }
 
 /** Traffic signal mast with three heads. */
@@ -110,8 +110,9 @@ export function busShelter(mb, x, z, y, rot) {
     [TILE.GLASS_ATRIUM, TILE.GLASS_ATRIUM, TILE.GLASS_ATRIUM, TILE.GLASS_ATRIUM, TILE.GLASS_ATRIUM, TILE.GLASS_ATRIUM],
     [0.85, 0.92, 0.98], 0.4);
   bench(mb, x, z, y, rot);
-  mb.box(x + (sx > sz ? w / 2 + 0.2 : 0), y + 2.0, z + (sz > sx ? w / 2 + 0.2 : 0), 0.5, 0.9, 0.5,
-    METAL(TILE.NEON_SIGN), [1, 1, 1], 0.9);
+  mb.box(x + (sx > sz ? w / 2 + 0.24 : 0), y + 2.15, z + (sz > sx ? w / 2 + 0.24 : 0),
+    sx > sz ? 0.12 : 0.46, 0.62, sx > sz ? 0.46 : 0.12,
+    METAL(TILE.NEON_SIGN), [1, 1, 1], 1.5);
 }
 
 /** Dockless e-scooters — three or four dumped on the sidewalk. */
@@ -346,7 +347,7 @@ export class LightPools {
     const colors = new Float32Array(lights.length * 3);
     for (let i = 0; i < lights.length; i++) {
       const L = lights[i];
-      dummy.position.set(L.x, 0.14, L.z);
+      dummy.position.set(L.x, (L.gy !== undefined ? L.gy : 0) + 0.14, L.z);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(L.r * 2, 1, L.r * 2);
       dummy.updateMatrix();
@@ -365,7 +366,7 @@ export class LightPools {
   setIntensity(v) {
     if (!this.mesh) return;
     this.mesh.visible = v > 0.02;
-    this.mesh.material.opacity = clamp(v, 0, 1) * 0.85;
+    this.mesh.material.opacity = clamp(v, 0, 1) * 1.05;
   }
 
   dispose() {

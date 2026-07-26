@@ -132,13 +132,13 @@ void main() {
 const KEYS = [
   {
     h: 0.0, zenith: 0x05070f, horizon: 0x0d1220, ground: 0x070910, sun: 0x9fb0d8,
-    cloudLit: 0x2a3348, cloudDark: 0x11162a, fog: 0x0a0e18, sunI: 0.09, hemiI: 0.16,
-    hemiSky: 0x16203a, hemiGround: 0x0a0c12, exposure: 1.25, stars: 1.0, haze: 0.25, cloud: 0.34,
+    cloudLit: 0x2a3348, cloudDark: 0x11162a, fog: 0x0a0e18, sunI: 0.09, hemiI: 0.60,
+    hemiSky: 0x333a54, hemiGround: 0x36281a, exposure: 1.25, stars: 1.0, haze: 0.25, cloud: 0.34,
   },
   {
     h: 5.1, zenith: 0x101a36, horizon: 0x4a3350, ground: 0x0b0d16, sun: 0xc06a58,
-    cloudLit: 0x5d4a63, cloudDark: 0x241d33, fog: 0x2a2434, sunI: 0.20, hemiI: 0.34,
-    hemiSky: 0x2b3a5e, hemiGround: 0x191418, exposure: 1.18, stars: 0.55, haze: 0.7, cloud: 0.42,
+    cloudLit: 0x5d4a63, cloudDark: 0x241d33, fog: 0x2a2434, sunI: 0.20, hemiI: 0.72,
+    hemiSky: 0x444c74, hemiGround: 0x402e1e, exposure: 1.18, stars: 0.55, haze: 0.7, cloud: 0.42,
   },
   {
     h: 6.5, zenith: 0x2b4d86, horizon: 0xe08a4e, ground: 0x2a1f1a, sun: 0xffab63,
@@ -162,19 +162,19 @@ const KEYS = [
   },
   // The famous Austin sunset over the lake.
   {
-    h: 19.9, zenith: 0x24325e, horizon: 0xff6b32, ground: 0x2e1e1c, sun: 0xff7c3a,
+    h: 19.9, zenith: 0x2a3866, horizon: 0xf07a44, ground: 0x2e1e1c, sun: 0xff7c3a,
     cloudLit: 0xff9d63, cloudDark: 0x5b3550, fog: 0x9a5a48, sunI: 1.05, hemiI: 0.50,
     hemiSky: 0x5c6ea6, hemiGround: 0x40291f, exposure: 1.12, stars: 0.12, haze: 1.85, cloud: 0.5,
   },
   {
     h: 21.0, zenith: 0x0b1128, horizon: 0x3a2b45, ground: 0x0d0e16, sun: 0xa06a72,
-    cloudLit: 0x40384f, cloudDark: 0x1a1728, fog: 0x2c2634, sunI: 0.20, hemiI: 0.30,
-    hemiSky: 0x232f4e, hemiGround: 0x141117, exposure: 1.22, stars: 0.72, haze: 0.55, cloud: 0.4,
+    cloudLit: 0x40384f, cloudDark: 0x1a1728, fog: 0x2c2634, sunI: 0.20, hemiI: 0.70,
+    hemiSky: 0x3c4266, hemiGround: 0x3e2c1d, exposure: 1.22, stars: 0.72, haze: 0.55, cloud: 0.4,
   },
   {
     h: 22.5, zenith: 0x06080f, horizon: 0x121728, ground: 0x080a11, sun: 0x9fb0d8,
-    cloudLit: 0x2d3650, cloudDark: 0x12172c, fog: 0x0d1120, sunI: 0.10, hemiI: 0.18,
-    hemiSky: 0x18223c, hemiGround: 0x0b0d13, exposure: 1.25, stars: 0.97, haze: 0.3, cloud: 0.36,
+    cloudLit: 0x2d3650, cloudDark: 0x12172c, fog: 0x0d1120, sunI: 0.10, hemiI: 0.62,
+    hemiSky: 0x353c58, hemiGround: 0x38291b, exposure: 1.25, stars: 0.97, haze: 0.3, cloud: 0.36,
   },
 ];
 

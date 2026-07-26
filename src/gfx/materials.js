@@ -28,6 +28,16 @@ vec4 sampleAtlas(sampler2D tex, vec2 uv, vec4 rect) {
   // not blow up the mip level and produce a blurry line.
   vec2 dx = dFdx(uv) * rect.zw;
   vec2 dy = dFdy(uv) * rect.zw;
+
+  // Clamp the footprint to two texels' worth of tile. Tiles are power-of-two
+  // sized and aligned, so box-filtered mips stay inside their own tile
+  // nearly all the way down — but the last couple of levels average the
+  // ENTIRE atlas, and a road running to the horizon asks for exactly those.
+  // Without the clamp every distant surface turns the same muddy brown.
+  float m = max(max(abs(dx.x), abs(dx.y)), max(abs(dy.x), abs(dy.y)));
+  float lim = rect.z * 0.5;
+  if (m > lim) { float k = lim / m; dx *= k; dy *= k; }
+
   vec2 auv = rect.xy + fract(uv) * rect.zw;
   return texture2DGradEXT(tex, auv, dx, dy);
 }

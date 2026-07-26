@@ -362,9 +362,9 @@ export class Crowd {
       }
     }
 
-    let toSpawn = Math.min(this.budget - alive, 6);
+    let toSpawn = Math.min(this.budget - alive, 12);
     let guard = 0;
-    while (toSpawn > 0 && guard++ < 40) {
+    while (toSpawn > 0 && guard++ < 80) {
       const ang = this.rng.next() * TAU;
       const r = lerp(spawnR * 0.45, spawnR * 0.98, this.rng.next());
       const sx = px + Math.cos(ang) * r, sz = pz + Math.sin(ang) * r;

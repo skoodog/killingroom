@@ -10,7 +10,8 @@ import { clamp, lerp, TAU, rectOverlaps } from '../core/mathx.js';
 import { ColliderWorld } from '../physics/collision.js';
 import {
   BOUNDS, NS_STREETS, EW_STREETS, LANDMARKS, PARKS, DISTRICTS, BRIDGES,
-  SHOAL_CREEK, WALLER_CREEK, RAINEY_STREETS, WATER_Y, LAKE_NORTH, LAKE_SOUTH,
+  SHOAL_CREEK, WALLER_CREEK, RAINEY_STREETS, SOUTH_NS, RIVERSIDE, BARTON_SPRINGS,
+  WATER_Y, LAKE_NORTH, LAKE_SOUTH,
   allBlocks, landmarkFootprint, districtAt, polyZAt, isWater,
 } from './austin.js';
 import {
@@ -404,6 +405,51 @@ export class World {
       }
     }
 
+    // The off-grid streets — Rainey, the south shore, the lake crossings —
+    // aren't made of blocks, so they need lamps laid along their polylines
+    // or they're pitch black after dark.
+    const lampLine = (pts, spacing, offset, cool) => {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const n = Math.max(1, Math.round(len / spacing));
+        const nx = -(b.z - a.z) / (len || 1), nz = (b.x - a.x) / (len || 1);
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) / n;
+          const side = k % 2 === 0 ? 1 : -1;
+          const x = lerp(a.x, b.x, t) + nx * offset * side;
+          const z = lerp(a.z, b.z, t) + nz * offset * side;
+          const mb2 = this.mbAt(x, z);
+          if (!mb2) continue;
+          if (this.colliders.overlaps(x, 1.2, z, 0.9, 2.4)) continue;
+          P.streetlight(mb2, x, z, CURB_H, Math.atan2(-nz * side, -nx * side), this.lights, cool);
+          this.stats.props++;
+        }
+      }
+    };
+    for (const s2 of RAINEY_STREETS) lampLine(s2.pts, 26, s2.w / 2 + 1.6, false);
+    for (const s2 of SOUTH_NS) lampLine(s2.pts, 40, s2.w / 2 + 2.0, false);
+    lampLine(RIVERSIDE, 44, 13, false);
+    lampLine(BARTON_SPRINGS, 44, 13, false);
+    for (const B of BRIDGES) {
+      if (!B.sidewalk) continue;
+      const mb2 = this.mbAt((B.a.x + B.b.x) / 2, (B.a.z + B.b.z) / 2);
+      if (!mb2) continue;
+      const len = Math.hypot(B.b.x - B.a.x, B.b.z - B.a.z);
+      const n = Math.max(2, Math.round(len / 30));
+      const ux = (B.b.x - B.a.x) / len, uz = (B.b.z - B.a.z) / len;
+      const nx = -uz, nz = ux;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        const side = k % 2 === 0 ? 1 : -1;
+        const x = lerp(B.a.x, B.b.x, t) + nx * (B.width / 2 - 1.0) * side;
+        const z = lerp(B.a.z, B.b.z, t) + nz * (B.width / 2 - 1.0) * side;
+        P.streetlight(mb2, x, z, B.deckY, Math.atan2(-nz * side, -nx * side), this.lights, false);
+        this.lights[this.lights.length - 1].y = B.deckY + 7.5;
+        this.stats.props++;
+      }
+    }
+
     // Food-truck courts
     const courts = [[-700, -420], [-250, -480], [420, -60], [-880, 20], [180, 420]];
     for (const [x, z] of courts) {
@@ -486,12 +532,33 @@ export class World {
 
   /* ---------------------------------------------------------------- */
 
-  /** Ground height at a point — street level, curb, bridge deck or hill. */
+  /**
+   * Ground height at a point: bridge deck or hill if something solid is
+   * underfoot, otherwise the kerb if we're on a block, otherwise the
+   * roadway. Sidewalks aren't colliders (you can walk on and off them
+   * freely), so the block test has to be analytic.
+   */
   groundY(x, z) {
     const support = this.colliders.supportHeight(x, z, 60, 0.25);
     if (support > -Infinity && support < 40) return support;
+    if (this.onBlock(x, z)) return CURB_H;
     if (isWater(x, z)) return WATER_Y;
     return 0;
+  }
+
+  /** True when (x,z) is inside a city block rather than in the roadway. */
+  onBlock(x, z) {
+    let inX = false;
+    for (let i = 0; i < NS_STREETS.length - 1; i++) {
+      const a = NS_STREETS[i], b = NS_STREETS[i + 1];
+      if (x > a.x + a.w / 2 && x < b.x - b.w / 2) { inX = true; break; }
+    }
+    if (!inX) return false;
+    for (let j = 0; j < EW_STREETS.length - 1; j++) {
+      const c = EW_STREETS[j], d = EW_STREETS[j + 1];
+      if (z > c.z + c.w / 2 && z < d.z - d.w / 2) return true;
+    }
+    return false;
   }
 
   update(dt, elapsed, camera, sky) {
@@ -499,7 +566,7 @@ export class World {
     const night = sky.nightFactor;
     const street = sky.streetlightFactor;
     this.nightAmount = street;
-    this.cityMat.emissiveIntensity = night * 1.0;
+    this.cityMat.emissiveIntensity = night * 0.88;
     this.paintMat.emissiveIntensity = 0;
     this.pools.setIntensity(street * 0.9);
     this.forest.update(dt, elapsed);

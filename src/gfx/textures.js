@@ -126,19 +126,23 @@ function curtainWall(ctx, s, night, rng, o) {
   const {
     glass = 0x2f4f66, glassAlt = 0x3d647d, mullion = 0x8d949a,
     spandrel = 0x2a3a46, spandrelH = 0.24, cols = BAYS * 2, rows = FLOORS,
-    reflect = 0.55, lit = 0xffd9a0, litChance = 0.34, tint = 0,
+    reflect = 0.55, lit = 0xffd9a0, litChance = 0.26, tint = 0,
   } = o;
 
-  fill(ctx, s, spandrel);
+  // On the night pass everything that is not a lit window must be pure
+  // black, or the emissive map makes the whole facade glow.
+  fill(ctx, s, night ? 0x000000 : spandrel);
   const cw = s / cols, rh = s / rows;
   const gh = rh * (1 - spandrelH);
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = c * cw, y = r * rh;
-      // spandrel band under each floor
-      ctx.fillStyle = hex(shade(spandrel, (rng.next() - 0.5) * 0.1));
-      ctx.fillRect(x, y + gh, cw, rh - gh);
+      if (!night) {
+        // spandrel band under each floor
+        ctx.fillStyle = hex(shade(spandrel, (rng.next() - 0.5) * 0.1));
+        ctx.fillRect(x, y + gh, cw, rh - gh);
+      }
 
       const isLit = night && rng.next() < litChance;
       if (night) {
@@ -184,8 +188,10 @@ function curtainWall(ctx, s, night, rng, o) {
     }
   }
 
+  if (night) return;
+
   // mullions
-  ctx.strokeStyle = night ? 'rgba(20,20,24,0.9)' : hex(mullion);
+  ctx.strokeStyle = hex(mullion);
   ctx.lineWidth = Math.max(1, s / 190);
   for (let c = 0; c <= cols; c++) wrapLine(ctx, s, c * cw, -s, c * cw, s * 2);
   ctx.lineWidth = Math.max(1, s / 150);
@@ -200,16 +206,20 @@ function punchedWall(ctx, s, night, rng, o) {
   const {
     wall = 0xb8b2a4, wallDark = 0x9a9488, glass = 0x2b3d4a,
     cols = BAYS, rows = FLOORS, winW = 0.52, winH = 0.5,
-    sill = true, litChance = 0.3, lit = 0xffd39a, mullions = 1, banding = 0,
+    sill = true, litChance = 0.22, lit = 0xffd39a, mullions = 1, banding = 0,
   } = o;
 
-  fill(ctx, s, wall);
-  mottle(ctx, s, 26, s * 0.22, [wallDark, shade(wall, 0.08)], 0.35, rng);
-  if (banding) {
-    ctx.fillStyle = hex(shade(wall, -0.07));
-    for (let r = 0; r < rows; r++) wrapRect(ctx, s, 0, (r / rows) * s, s, s * 0.012);
+  if (night) {
+    fill(ctx, s, 0x000000);
+  } else {
+    fill(ctx, s, wall);
+    mottle(ctx, s, 26, s * 0.22, [wallDark, shade(wall, 0.08)], 0.35, rng);
+    if (banding) {
+      ctx.fillStyle = hex(shade(wall, -0.07));
+      for (let r = 0; r < rows; r++) wrapRect(ctx, s, 0, (r / rows) * s, s, s * 0.012);
+    }
+    grain(ctx, s, 0.07, rng);
   }
-  grain(ctx, s, 0.07, rng);
 
   const cw = s / cols, rh = s / rows;
   for (let r = 0; r < rows; r++) {
@@ -421,15 +431,19 @@ def('BRICK_DARK_WIN', (c, s, n, r) => brickWall(c, s, n, r, {
 
 // Open-deck parking garage: the most common building type downtown.
 def('GARAGE', (c, s, n, r) => {
-  fill(c, s, 0x9d9a93);
-  mottle(c, s, 20, s * 0.25, [0x87847d, 0xaeaba4], 0.4, r);
-  grain(c, s, 0.08, r);
+  if (n) {
+    fill(c, s, 0x000000);
+  } else {
+    fill(c, s, 0x9d9a93);
+    mottle(c, s, 20, s * 0.25, [0x87847d, 0xaeaba4], 0.4, r);
+    grain(c, s, 0.08, r);
+  }
   const rows = FLOORS;
   const rh = s / rows;
   for (let i = 0; i < rows; i++) {
     const y = i * rh;
     // dark open deck void
-    c.fillStyle = n ? '#0b0b0d' : '#22242a';
+    c.fillStyle = n ? '#000000' : '#22242a';
     c.fillRect(0, y + rh * 0.30, s, rh * 0.46);
     if (n && r.next() < 0.75) {
       // sodium strip lights on the deck ceiling
@@ -504,7 +518,7 @@ def('CORRUGATED', (c, s, n, r) => {
 // ---- ground floors -------------------------------------------------
 def('STOREFRONT', (c, s, n, r) => {
   // Modern retail: full-height glass, mullions, warm interior.
-  fill(c, s, 0x2a2f36);
+  fill(c, s, n ? 0x000000 : 0x2a2f36);
   const bays = 4, bw = s / bays;
   for (let i = 0; i < bays; i++) {
     const x = i * bw;
@@ -540,11 +554,15 @@ def('STOREFRONT', (c, s, n, r) => {
 def('SIXTH_FRONT', (c, s, n, r) => {
   const paints = [0x9d3b34, 0x2f5b52, 0x3b4a78, 0x8a6b2c, 0x6c3a5e, 0x2f2f33, 0xa8503a];
   const base = r.pick(paints);
-  fill(c, s, base);
-  mottle(c, s, 18, s * 0.18, [shade(base, -0.25), shade(base, 0.18)], 0.3, r);
-  grain(c, s, 0.1, r);
+  if (n) {
+    fill(c, s, 0x000000);
+  } else {
+    fill(c, s, base);
+    mottle(c, s, 18, s * 0.18, [shade(base, -0.25), shade(base, 0.18)], 0.3, r);
+    grain(c, s, 0.1, r);
+  }
   // glazed shopfront
-  c.fillStyle = n ? '#08090b' : '#1a1d22';
+  c.fillStyle = n ? '#000000' : '#1a1d22';
   c.fillRect(s * 0.06, s * 0.30, s * 0.88, s * 0.5);
   if (n) {
     const neon = r.pick([0xff3b6b, 0x39e0ff, 0xffd21e, 0x6cff8a, 0xff7a1e, 0xd44bff]);
@@ -622,9 +640,9 @@ def('ASPHALT_WORN', (c, s, n, r) => {
 });
 
 def('SIDEWALK', (c, s, n, r) => {
-  fill(c, s, 0xb5b1a8);
-  mottle(c, s, 34, s * 0.2, [0xa19d95, 0xc4c0b7], 0.42, r);
-  grain(c, s, 0.1, r);
+  fill(c, s, 0xb8b4ab);
+  mottle(c, s, 20, s * 0.16, [0xaeaaa1, 0xc2beb5], 0.20, r);
+  grain(c, s, 0.07, r);
   // scored control joints — 2 x 2 panels per tile
   c.strokeStyle = 'rgba(120,117,110,0.75)';
   c.lineWidth = Math.max(1.4, s / 120);
@@ -634,7 +652,7 @@ def('SIDEWALK', (c, s, n, r) => {
   c.lineWidth = Math.max(1, s / 220);
   wrapLine(c, s, s / 2 + 2, -s, s / 2 + 2, s * 2);
   // stains
-  mottle(c, s, 8, s * 0.09, [0x8a867e], 0.3, r);
+  mottle(c, s, 6, s * 0.07, [0x9c988f], 0.16, r);
   if (n) darken(c, s, 0.62);
 });
 
@@ -961,8 +979,13 @@ def('SIGN_STREET', (c, s, n, r) => {
 
 /* ------------------------------------------------------------------ */
 
-function darken(ctx, s, amount) {
-  ctx.fillStyle = `rgba(4,6,10,${amount})`;
+/**
+ * Used only on the night pass, and only for surfaces that emit no light of
+ * their own. The emissive atlas is multiplied straight into the frame, so
+ * "a bit darker" is not good enough — it has to be black.
+ */
+function darken(ctx, s) {
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, s, s);
 }
 
@@ -1026,9 +1049,14 @@ export function buildAtlas(tileSize = 256, seed = 0xa057) {
     rects[i * 4 + 3] = (tileSize - 1) * inv;
   }
 
+  // flipY must be off: the tile rects above are in canvas space, and the
+  // default upload flips the whole atlas vertically, which silently shifts
+  // every lookup to its mirror row — grass renders as brick, asphalt as
+  // glass, gravel roofs as tree bark.
   const map = new THREE.CanvasTexture(dayC);
   map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+  map.flipY = false;
   map.generateMipmaps = true;
   map.minFilter = THREE.LinearMipmapLinearFilter;
   map.magFilter = THREE.LinearFilter;
@@ -1036,6 +1064,7 @@ export function buildAtlas(tileSize = 256, seed = 0xa057) {
   const emissive = new THREE.CanvasTexture(nightC);
   emissive.colorSpace = THREE.SRGBColorSpace;
   emissive.wrapS = emissive.wrapT = THREE.ClampToEdgeWrapping;
+  emissive.flipY = false;
   emissive.generateMipmaps = true;
   emissive.minFilter = THREE.LinearMipmapLinearFilter;
   emissive.magFilter = THREE.LinearFilter;

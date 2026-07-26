@@ -21,18 +21,22 @@ const opt = (name, def) => {
 const OUT = opt('shots', 'shots');
 const WAIT = parseFloat(opt('wait', '40'));
 
-// Vantage points chosen to show the parts of downtown that must read as Austin.
+// Vantage points chosen to show the parts of downtown that have to read as
+// Austin. Heading convention: yaw 0 looks north, +PI/2 west, -PI/2 east.
 const SHOTS = [
-  { name: '01-congress-north', x: 0, y: 1.7, z: 60, yaw: Math.PI, pitch: 0.02, hour: 17.4 },
-  { name: '02-south-shore', x: -120, y: 2.2, z: 420, yaw: Math.PI + 0.25, pitch: 0.10, hour: 19.7 },
-  { name: '03-frost-base', x: 60, y: 1.7, z: -400, yaw: -2.2, pitch: 0.32, hour: 12.5 },
-  { name: '04-sixth-street', x: 240, y: 1.7, z: -542, yaw: Math.PI / 2, pitch: 0.0, hour: 21.6 },
-  { name: '05-rainey', x: 690, y: 1.7, z: 120, yaw: 0.4, pitch: 0.12, hour: 20.6 },
-  { name: '06-lake-bridge', x: 0, y: 8.6, z: 250, yaw: -1.35, pitch: 0.0, hour: 19.9 },
-  { name: '07-city-hall', x: -280, y: 1.7, z: -60, yaw: -1.9, pitch: 0.14, hour: 9.5 },
-  { name: '08-skyline-far', x: -700, y: 3.0, z: 560, yaw: 0.75, pitch: 0.14, hour: 18.6 },
-  { name: '09-crowd', x: -30, y: 1.7, z: -300, yaw: Math.PI, pitch: -0.05, hour: 13.0 },
-  { name: '10-seaholm', x: -820, y: 1.7, z: -140, yaw: -2.6, pitch: 0.06, hour: 16.4 },
+  { name: '01-congress-north', x: 19, z: -150, yaw: 0, pitch: 0.06, hour: 17.2 },
+  { name: '02-south-shore', x: -470, z: 392, yaw: 0.10, pitch: 0.09, hour: 19.3 },
+  { name: '03-frost-base', x: 19, z: -330, yaw: -0.55, pitch: 0.55, hour: 12.5 },
+  { name: '04-sixth-street', x: 300, z: -530.2, yaw: Math.PI / 2, pitch: 0.02, hour: 21.7 },
+  { name: '05-rainey', x: 706, z: 150, yaw: 0, pitch: 0.10, hour: 20.7 },
+  { name: '06-bat-bridge', x: 0, z: 250, yaw: 0, pitch: 0.05, hour: 20.0, y: 7.1 },
+  { name: '07-city-hall', x: -300, z: -24, yaw: -0.5, pitch: 0.18, hour: 9.5 },
+  { name: '08-republic-square', x: -386, z: -200, yaw: 0, pitch: 0.14, hour: 15.4 },
+  { name: '09-crowd', x: 19, z: -505, yaw: 0, pitch: -0.03, hour: 13.0 },
+  { name: '10-seaholm', x: -735, z: -30, yaw: Math.PI / 2, pitch: 0.08, hour: 16.6 },
+  { name: '12-lake-trail', x: 300, z: 145, yaw: -Math.PI / 2, pitch: 0.02, hour: 7.6 },
+  { name: '13-independent', x: -742, z: -258, yaw: -0.5, pitch: 0.5, hour: 11.0 },
+  { name: '14-fifth-traffic', x: -180, z: -420, yaw: -Math.PI / 2, pitch: 0.02, hour: 14.2 },
 ];
 
 if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
@@ -115,7 +119,7 @@ async function shot(s) {
     const g = window.__game;
     g.paused = false;
     g.sky.setHour(s.hour);
-    g.player.pos.set(s.x, s.y - 1.66, s.z);
+    g.player.pos.set(s.x, (s.y !== undefined ? s.y : g.world.groundY(s.x, s.z)), s.z);
     g.player.vel.set(0, 0, 0);
     g.player.yaw = s.yaw;
     g.player.pitch = s.pitch;
