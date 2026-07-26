@@ -130,7 +130,6 @@ visibly different people.
 | RMB | Aim down sights |
 | `R` | Reload |
 | `1`–`5`, wheel | Switch weapon |
-| `M` | Expand map |
 | `T` | Skip an hour |
 | `F3` | Performance overlay |
 | `P` / `Esc` | Pause |
@@ -144,6 +143,10 @@ line of sight long enough.
 There is a full day/night cycle (25 real minutes per in-game day). Window
 lights come on across the skyline, streetlights pool on the pavement, headlight
 cones sweep the roads, the traffic bed quietens and the cicadas take over.
+
+**Not built yet:** vehicles are ambient traffic only — you can't get in and
+drive one, which is the obvious missing GTA verb. There's also no mission
+structure; it's a sandbox.
 
 ---
 
