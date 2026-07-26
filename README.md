@@ -119,6 +119,8 @@ visibly different people.
 
 ## Playing it
 
+**On foot**
+
 | | |
 |---|---|
 | `W A S D` | Move |
@@ -130,9 +132,22 @@ visibly different people.
 | RMB | Aim down sights |
 | `R` | Reload |
 | `1`–`5`, wheel | Switch weapon |
+| `F` | Take the nearest vehicle |
 | `T` | Skip an hour |
 | `F3` | Performance overlay |
 | `P` / `Esc` | Pause |
+
+**Driving**
+
+| | |
+|---|---|
+| `W` / `S` | Throttle / brake, then reverse |
+| `A` / `D` | Steer |
+| `Space` | Handbrake — breaks traction, so you can swing it round |
+| Mouse | Swing the chase camera; it re-centres behind you |
+| `V` | Cycle chase / close / bonnet camera |
+| `H` | Horn |
+| `F` | Get out |
 
 Five weapons, all procedural view models with hitscan ballistics, spread that
 opens when you sprint and tightens when you aim, recoil, tracers, impact
@@ -144,16 +159,68 @@ There is a full day/night cycle (25 real minutes per in-game day). Window
 lights come on across the skyline, streetlights pool on the pavement, headlight
 cones sweep the roads, the traffic bed quietens and the cicadas take over.
 
-**Not built yet:** vehicles are ambient traffic only — you can't get in and
-drive one, which is the obvious missing GTA verb. There's also no mission
-structure; it's a sandbox.
+### Driving
+
+Walk up to any car in traffic and press `F`. The AI instance is recycled onto
+another lane so density stays constant, and you get the same body, the same
+colour, and handling that matches the shape — a bus wallows, a pickup leans, a
+pedicab is a bicycle.
+
+The model is arcade, not a simulation, but it has the handful of things that
+make driving feel like driving: steering lock that closes down as you speed up,
+a lateral grip budget you can break with the handbrake to swing the tail out,
+weight transfer you can see in the body roll and dive, and collisions that
+scrub speed in proportion to how square the hit was. Hit a wall hard enough and
+the car takes damage and so do you. Hit a person and they go over the bonnet,
+the crowd scatters, and the wanted level goes up.
+
+The camera is a spring arm behind the car. It swings out as you turn, re-centres
+faster the quicker you're going, pulls in when a wall is about to come between
+it and you, refuses to end up underground, rolls slightly into corners, and
+widens its field of view with speed.
+
+**Still not built:** there's no mission structure — it's a sandbox.
 
 ---
 
 ## Running on a slow machine
 
-This was built to stay playable on a cheap laptop or a phone, so the
-performance work is structural rather than cosmetic:
+Quality is measured and governed, not guessed at once and left alone.
+
+**It benchmarks your machine before it builds the world.** Draw distance and
+crowd size can be given back at any moment, but polygon density is baked into
+the merged chunk meshes at generation time — so a probe runs first: a few
+frames of a deliberately shading-heavy workload, timed with a pipeline flush,
+which tells you what the GPU can *do* rather than what its name suggests. The
+result picks the tier. A tier you choose by hand always wins and sticks.
+
+**Then a governor watches frame time forever after.** It gives quality back in
+a fixed order, cheapest first — render scale, then crowd density, then draw
+distance, then shadows — twelve rungs in all, dropping two at once if the 95th
+percentile frame time collapses, and climbing back only when *both* the average
+and the tail are comfortable so a single stutter can't permanently downgrade
+you. If it runs out of rungs and the machine is still struggling, the remaining
+cost is geometry it can't undo, so it lowers the tier (which persists) and says
+plainly that a reload will rebuild at that density.
+
+Everything it does is visible on `F3`.
+
+**Geometry scales with the tier.** The same generators produce a very different
+number of triangles depending on what the machine can carry:
+
+| Tier | City triangles | Detail |
+|---|---|---|
+| low | ~0.55 M | box massing, flat ground, four-sided poles |
+| medium | ~1.2 M | chamfered towers, slab bands, subdivided ground |
+| high / ultra | ~1.9 M | window reveals, cornices with dentils, garage deck slabs, round trunks and limbs |
+
+Characters scale the same way: 666 triangles at low, 1,352 at high — round
+limbs that taper correctly at the joints, shoes with soles, hands with thumbs,
+collars, cuffs and belts.
+
+`npm run polycount -- high` prints the census for any tier.
+
+The structural work underneath all of that:
 
 - **The entire city is ~60 draw calls.** One canvas-drawn texture atlas covers
   every surface; each vertex carries the atlas rect for its tile and the

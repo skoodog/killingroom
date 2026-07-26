@@ -34,6 +34,9 @@ export const TIERS = {
     ssao: false,
     anisotropy: 1,
     facadeDetail: 0,      // 0 = flat facades, 1 = extruded bays, 2 = full trim
+    geoDetail: 1,         // geometry density multiplier (see MeshBuilder)
+    bevel: false,         // chamfered tower corners
+    slabBands: 0,         // floor-slab bands: 1 band every N storeys, 0 = none
     interiorFloors: false,
     particleBudget: 90,
     decalBudget: 32,
@@ -64,6 +67,9 @@ export const TIERS = {
     ssao: false,
     anisotropy: 4,
     facadeDetail: 1,
+    geoDetail: 2,
+    bevel: true,
+    slabBands: 4,
     interiorFloors: true,
     particleBudget: 200,
     decalBudget: 64,
@@ -94,6 +100,9 @@ export const TIERS = {
     ssao: false,
     anisotropy: 8,
     facadeDetail: 2,
+    geoDetail: 3,
+    bevel: true,
+    slabBands: 3,
     interiorFloors: true,
     particleBudget: 380,
     decalBudget: 110,
@@ -124,6 +133,9 @@ export const TIERS = {
     ssao: false,
     anisotropy: 16,
     facadeDetail: 2,
+    geoDetail: 3,
+    bevel: true,
+    slabBands: 1,
     interiorFloors: true,
     particleBudget: 600,
     decalBudget: 160,
@@ -187,7 +199,13 @@ export class Settings {
     this.sensitivity = saved.sensitivity ?? 1;
     this.invertY = saved.invertY ?? false;
     this.adaptive = saved.adaptive ?? true;
-    this.renderScale = 1;      // driven by the adaptive scaler
+    // autoQuality lets the boot benchmark and the runtime governor pick the
+    // tier. It stays on until the player chooses a tier by hand, at which
+    // point their choice sticks.
+    this.autoQuality = saved.autoQuality ?? true;
+    this.tierLocked = saved.tierLocked ?? false;
+    this.benchmark = null;     // filled in by benchmarkGPU at boot
+    this.renderScale = 1;      // driven by the governor
     this.listeners = new Set();
 
     // Adaptive scaler state
@@ -205,8 +223,31 @@ export class Settings {
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   _emit(what) { for (const fn of this.listeners) fn(what, this); }
 
-  setTier(name) {
-    if (!TIERS[name] || name === this.tierName) return;
+  /** Apply a tier chosen by the benchmark. Never overrides a manual pick. */
+  applyAutoTier(name) {
+    if (!TIERS[name] || this.tierLocked || !this.autoQuality) return false;
+    if (name === this.tierName) return false;
+    this.tierName = name;
+    this.tier = { ...TIERS[name] };
+    this.renderScale = 1;
+    save(this);
+    this._emit('tier');
+    return true;
+  }
+
+  setAutoQuality(v) {
+    this.autoQuality = !!v;
+    if (v) this.tierLocked = false;
+    save(this);
+    this._emit('auto');
+  }
+
+  setTier(name, manual = false) {
+    if (!TIERS[name] || name === this.tierName) {
+      if (manual) { this.tierLocked = true; save(this); }
+      return;
+    }
+    if (manual) this.tierLocked = true;
     this.tierName = name;
     this.tier = { ...TIERS[name] };
     this.renderScale = 1;
@@ -269,6 +310,8 @@ function save(s) {
       sensitivity: s.sensitivity,
       invertY: s.invertY,
       adaptive: s.adaptive,
+      autoQuality: s.autoQuality,
+      tierLocked: s.tierLocked,
     }));
   } catch { /* private mode, whatever */ }
 }

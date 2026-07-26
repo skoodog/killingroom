@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Settings, TIER_ORDER } from './core/settings.js';
 import { Engine } from './core/engine.js';
 import { Input } from './core/input.js';
+import { benchmarkGPU, PerfGovernor } from './core/perf.js';
 import { Sky } from './gfx/sky.js';
 import { World } from './world/world.js';
 import { Player } from './player/controller.js';
@@ -29,9 +30,26 @@ async function main() {
   const engine = new Engine(canvas, settings);
   const input = new Input(canvas, settings);
 
+  // ---- measure the machine before committing to a geometry budget -------
+  // Draw distance and crowd size can be walked back at any time, but polygon
+  // density is baked into the merged chunk meshes at generation. So the
+  // benchmark has to run first — a renderer string tells you what the GPU
+  // claims to be, a probe tells you what it can do.
+  setProgress(2, 'Measuring this machine');
+  await new Promise(r => setTimeout(r, 0));
+  try {
+    const bench = await benchmarkGPU(engine.renderer);
+    settings.benchmark = bench;
+    settings.applyAutoTier(bench.tier);
+    console.info(`[perf] probe ${bench.ms.toFixed(2)} ms/frame → score ${bench.score.toFixed(1)}`
+      + ` → ${bench.tier}${settings.tierLocked ? ' (overridden by your setting)' : ''}`
+      + (bench.renderer ? `  [${bench.renderer}]` : ''));
+  } catch (e) {
+    console.warn('[perf] benchmark failed, falling back to the static guess', e);
+  }
+
   const sky = new Sky(engine.scene, { startHour: 17.6, dayLengthSeconds: 1800 });
 
-  setProgress(2, 'Booting');
   const world = new World(engine, settings, 'austin-1839');
   await world.generate(setProgress);
 
@@ -42,6 +60,7 @@ async function main() {
   const { Crowd } = await import('./agents/crowd.js');
   const { Traffic } = await import('./agents/traffic.js');
   const { Weapons } = await import('./player/weapons.js');
+  const { VehicleSystem } = await import('./player/vehicle.js');
   const { AudioEngine } = await import('./audio/audio.js');
   const { Hud } = await import('./ui/hud.js');
   const { Minimap } = await import('./ui/minimap.js');
@@ -56,6 +75,7 @@ async function main() {
   const traffic = new Traffic(engine.scene, world, settings);
   traffic.build();
   const weapons = new Weapons(engine, world, player, audio, settings);
+  const vehicles = new VehicleSystem(engine, world, player, traffic, crowd, audio, settings);
   const bats = new Bats(engine.scene, world);
   const hudUi = new Hud(player, weapons);
   const minimap = new Minimap($('minimap'), world, player);
@@ -67,13 +87,36 @@ async function main() {
   crowd.onCopFire = () => audio.play('pistol');
   bats.onChirp = () => audio.play('bats');
 
+  vehicles.onEnter = (car) => { audio.startEngine(); hudUi.toast(`${car.name} taken`, ''); };
+  vehicles.onExit = () => audio.stopEngine();
+  vehicles.onImpact = (v) => audio.play('crash', { level: clamp(v / 9, 0.3, 3) });
+  vehicles.onRunOver = () => { audio.play('flesh'); hudUi.toast('Hit and run', 'bad'); };
+
   const game = {
     settings, engine, input, sky, world, player, crowd, traffic,
-    weapons, audio, hudUi, minimap, bats,
+    weapons, vehicles, audio, hudUi, minimap, bats,
     paused: false, wanted: 0, wantedDecay: 0, kills: 0, maxWanted: 0, started: 0,
   };
   weapons.game = game;
   window.__game = game;
+
+  // ---- the governor: quality follows the machine, forever --------------
+  const governor = new PerfGovernor({
+    settings, engine, world, crowd, traffic,
+    onNeedsRebuild: (tier) => {
+      // We've given back everything that can be given back at runtime. The
+      // rest is baked into the geometry, so the honest move is to drop the
+      // tier (which persists) and say a reload will rebuild at that density.
+      if (game._rebuildNoticed) return;
+      game._rebuildNoticed = true;
+      settings.setTier(tier);
+      syncMenu(game);
+      hudUi.toast(`Quality lowered to ${tier} — reload to rebuild the world`, 'bad');
+    },
+  });
+  game.governor = governor;
+  engine.onTiming = (ms) => governor.update(ms);
+  governor.start();
 
   wireMenus(game);
 
@@ -97,8 +140,26 @@ async function main() {
     if (input.hit('KeyP') || input.hit('Escape')) togglePause(game, true);
     if (input.hit('F3')) hudUi.toggleStats();
 
-    player.update(dt);
+    // Vehicles first: it owns enter/exit, and while driving it owns the
+    // camera and consumes the mouse look, so the walking controller must
+    // not also run.
+    vehicles.update(dt, elapsed, input, game);
+    const driving = vehicles.driving;
+    if (!driving) player.update(dt);
+    else if (input.hit('KeyH')) audio.play('horn');
+
+    weapons.enabled = !driving;
     weapons.update(dt, elapsed);
+
+    if (driving) {
+      const a = vehicles.active;
+      audio.setEngine(
+        clamp01(Math.abs(a.vf) / a.hand.top),
+        input.down('KeyW') ? 1 : 0,
+        a.slip
+      );
+    }
+
     crowd.update(dt, elapsed, player, game);
     traffic.update(dt, elapsed, player);
     bats.update(dt, elapsed, sky, player);
@@ -123,7 +184,11 @@ async function main() {
 
   setProgress(100, 'Ready');
   startbtn.classList.add('ready');
-  bootmsg.textContent = `${world.stats.buildings} buildings · ${world.stats.trees} trees · ${(world.stats.tris / 1000) | 0}k triangles`;
+  const b = settings.benchmark;
+  bootmsg.textContent =
+    `${world.stats.buildings} buildings · ${world.stats.trees} trees · `
+    + `${(world.stats.tris / 1000) | 0}k triangles · ${settings.tierName}`
+    + (b ? ` (probe ${b.ms.toFixed(1)} ms)` : '');
 
   const start = () => {
     boot.classList.add('hidden');
@@ -160,6 +225,12 @@ function togglePause(game, force) {
   else game.input.requestLock();
 }
 
+function respawn(game) {
+  if (game.vehicles.driving) game.vehicles.exit();
+  game.player.spawn(21, -262, 0);
+  game.wanted = 0;
+}
+
 function showDeath(game) {
   const el = $('dead');
   el.classList.add('on');
@@ -171,54 +242,72 @@ function showDeath(game) {
     `Last seen near <b>${placeName(game.player.pos.x, game.player.pos.z)}</b>`;
 }
 
+function syncSeg(id, attr, value) {
+  const el = $(id);
+  if (!el) return;
+  for (const b of el.querySelectorAll('button')) {
+    b.classList.toggle('on', b.dataset[attr] === String(value));
+  }
+}
+
+function syncMenu(game) {
+  const { settings } = game;
+  syncSeg('qseg', 'q', settings.tierName);
+  syncSeg('cseg', 'c', settings.crowdScale);
+  syncSeg('sseg', 's', settings.shadows ? 1 : 0);
+  syncSeg('aseg', 'a', settings.autoQuality ? 1 : 0);
+}
+
 function wireMenus(game) {
-  const { settings, player, world } = game;
+  const { settings, player } = game;
 
   $('resume').addEventListener('click', () => togglePause(game));
   $('respawn').addEventListener('click', () => {
-    player.spawn(21, -262, 0);
-    game.wanted = 0;
+    respawn(game);
     $('dead').classList.remove('on');
     togglePause(game);
   });
   $('again').addEventListener('click', () => {
-    player.spawn(21, -262, 0);
-    game.wanted = 0;
+    respawn(game);
     game.started = performance.now();
     $('dead').classList.remove('on');
     game.input.requestLock();
   });
 
-  const syncSeg = (id, attr, value) => {
-    for (const b of $(id).querySelectorAll('button')) {
-      b.classList.toggle('on', b.dataset[attr] === String(value));
-    }
-  };
-  syncSeg('qseg', 'q', settings.tierName);
-  syncSeg('cseg', 'c', settings.crowdScale);
-  syncSeg('sseg', 's', settings.shadows ? 1 : 0);
+  syncMenu(game);
 
   $('qseg').addEventListener('click', (e) => {
     const q = e.target.dataset.q;
     if (!q) return;
-    settings.setTier(q);
-    syncSeg('qseg', 'q', q);
-    syncSeg('sseg', 's', settings.shadows ? 1 : 0);
-    game.crowd.applyBudget();
-    game.traffic.applyBudget();
+    // Choosing a tier by hand switches auto off — the player's call wins.
+    settings.setTier(q, true);
+    settings.autoQuality = false;
+    syncMenu(game);
+    game.governor.level = 0;
+    game.governor.start();
+    game.hudUi.toast(`${q} — reload to rebuild geometry at this detail`, '');
   });
   $('cseg').addEventListener('click', (e) => {
     const c = e.target.dataset.c;
     if (!c) return;
     settings.setCrowdScale(parseFloat(c));
-    syncSeg('cseg', 'c', c);
-    game.crowd.applyBudget();
+    syncMenu(game);
+    game.governor.start();
   });
   $('sseg').addEventListener('click', (e) => {
     const s = e.target.dataset.s;
     if (s === undefined) return;
     settings.setShadows(s === '1');
-    syncSeg('sseg', 's', s);
+    syncMenu(game);
+    game.governor.start();
+  });
+  $('aseg').addEventListener('click', (e) => {
+    const a = e.target.dataset.a;
+    if (a === undefined) return;
+    settings.setAutoQuality(a === '1');
+    game.governor.enabled = a === '1';
+    if (a !== '1') { game.governor.level = 0; game.governor.start(); }
+    syncMenu(game);
   });
   const sens = $('sens');
   sens.value = settings.sensitivity;

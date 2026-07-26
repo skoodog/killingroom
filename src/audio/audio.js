@@ -14,6 +14,7 @@ export class AudioEngine {
     this.ambGain = null;
     this.noiseBuf = null;
     this.sirenOsc = null;
+    this.engine = null;
     this._lastPlay = new Map();
     this.enabled = true;
   }
@@ -273,6 +274,109 @@ export class AudioEngine {
       o.frequency.exponentialRampToValueAtTime(3200, t + 0.05);
       this.env(o, t, 0.002, 0.05, 0.03);
       o.start(t); o.stop(t + 0.1);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* engine                                                            */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A car engine is two detuned saws an octave apart through a lowpass, with
+   * the cutoff opening under load. Crude, but the pitch tracking is what
+   * sells it — you hear the revs climb and drop through the gears.
+   */
+  startEngine() {
+    if (!this.ready || this.engine) return;
+    const ctx = this.ctx;
+    const out = ctx.createGain();
+    out.gain.value = 0;
+    out.connect(this.bus);
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 3.4;
+    lp.connect(out);
+
+    const a = ctx.createOscillator(); a.type = 'sawtooth'; a.frequency.value = 60;
+    const b = ctx.createOscillator(); b.type = 'square'; b.frequency.value = 30;
+    const ag = ctx.createGain(); ag.gain.value = 0.7;
+    const bg = ctx.createGain(); bg.gain.value = 0.4;
+    a.connect(ag); ag.connect(lp);
+    b.connect(bg); bg.connect(lp);
+
+    // a little induction hiss on top
+    const n = this.noiseSource(true);
+    const nbp = ctx.createBiquadFilter();
+    nbp.type = 'bandpass'; nbp.frequency.value = 1800; nbp.Q.value = 1.2;
+    const ng = ctx.createGain(); ng.gain.value = 0.04;
+    n.connect(nbp); nbp.connect(ng); ng.connect(out);
+
+    // tyre squeal, gated by slip
+    const sk = this.noiseSource(true);
+    const sbp = ctx.createBiquadFilter();
+    sbp.type = 'bandpass'; sbp.frequency.value = 2400; sbp.Q.value = 9;
+    const sg = ctx.createGain(); sg.gain.value = 0;
+    sk.connect(sbp); sbp.connect(sg); sg.connect(this.bus);
+
+    a.start(); b.start(); n.start(); sk.start();
+    this.engine = { out, lp, a, b, ng, sg, sbp };
+    out.gain.setTargetAtTime(0.16, ctx.currentTime, 0.25);
+  }
+
+  stopEngine() {
+    if (!this.engine) return;
+    const e = this.engine;
+    const t = this.ctx.currentTime;
+    e.out.gain.setTargetAtTime(0, t, 0.18);
+    e.sg.gain.setTargetAtTime(0, t, 0.1);
+    const dead = e;
+    setTimeout(() => {
+      try { dead.a.stop(); dead.b.stop(); } catch { /* already gone */ }
+    }, 700);
+    this.engine = null;
+  }
+
+  /**
+   * @param {number} rpm  0..1
+   * @param {number} load 0..1 throttle
+   * @param {number} slip 0..1 lateral slide
+   */
+  setEngine(rpm, load, slip) {
+    if (!this.engine) return;
+    const t = this.ctx.currentTime;
+    const f = 42 + rpm * 155;
+    this.engine.a.frequency.setTargetAtTime(f, t, 0.05);
+    this.engine.b.frequency.setTargetAtTime(f * 0.5, t, 0.05);
+    this.engine.lp.frequency.setTargetAtTime(420 + rpm * 1500 + load * 700, t, 0.08);
+    this.engine.ng.gain.setTargetAtTime(0.02 + rpm * 0.06, t, 0.1);
+    this.engine.sg.gain.setTargetAtTime(slip > 0.18 ? (slip - 0.18) * 0.14 : 0, t, 0.06);
+    this.engine.sbp.frequency.setTargetAtTime(1800 + slip * 1800, t, 0.1);
+  }
+
+  s_crash(now, { level = 1 } = {}) {
+    const n = this.noiseSource();
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 900;
+    n.connect(lp);
+    this.env(lp, now, 0.002, 0.32, Math.min(0.5, 0.12 * level));
+    n.start(now); n.stop(now + 0.5);
+    const o = this.ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(180, now);
+    o.frequency.exponentialRampToValueAtTime(52, now + 0.28);
+    this.env(o, now, 0.002, 0.3, Math.min(0.4, 0.1 * level));
+    o.start(now); o.stop(now + 0.4);
+  }
+
+  s_horn(now) {
+    for (const f of [370, 440]) {
+      const o = this.ctx.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = f;
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 2200;
+      o.connect(lp);
+      this.env(lp, now, 0.01, 0.42, 0.06);
+      o.start(now); o.stop(now + 0.5);
     }
   }
 

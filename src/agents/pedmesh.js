@@ -7,6 +7,7 @@
 // draw call yields hundreds of visibly different people who all walk.
 
 import * as THREE from 'three';
+import { DETAIL, sides } from '../gfx/detail.js';
 
 /* ------------------------------------------------------------------ */
 /* bone + part ids                                                     */
@@ -96,6 +97,57 @@ class PedBuilder {
     }
   }
 
+  /**
+   * A tapered N-sided prism along Y. Limbs, torsos and necks all use this —
+   * an eight-sided arm costs twice a box but stops the crowd reading as
+   * Lego, because the silhouette curves instead of stepping.
+   */
+  limb(cx, cy, cz, rx, rz, h, seg, bone, part, acc = 0, opts = {}) {
+    const { taper = 1, capTop = true, capBottom = true, rot = 0, lean = 0, squash = 1 } = opts;
+    const p = pivotFor(bone);
+    const n = Math.max(3, seg | 0);
+    const y0 = cy - h / 2, y1 = cy + h / 2;
+    const push = (x, y, z, nx, ny, nz) => {
+      this.pos.push(x, y, z);
+      this.nrm.push(nx, ny, nz);
+      this.bone.push(bone); this.part.push(part);
+      this.pivot.push(p[0], p[1], p[2]); this.acc.push(acc);
+    };
+    for (let i = 0; i < n; i++) {
+      const a0 = rot + (i / n) * Math.PI * 2;
+      const a1 = rot + ((i + 1) / n) * Math.PI * 2;
+      const mid = (a0 + a1) / 2;
+      const pts = [
+        [cx + Math.cos(a0) * rx, y0, cz + Math.sin(a0) * rz * squash],
+        [cx + Math.cos(a1) * rx, y0, cz + Math.sin(a1) * rz * squash],
+        [cx + Math.cos(a1) * rx * taper + lean, y1, cz + Math.sin(a1) * rz * taper * squash],
+        [cx + Math.cos(a0) * rx * taper + lean, y1, cz + Math.sin(a0) * rz * taper * squash],
+      ];
+      const base = this.n;
+      for (const q of pts) push(q[0], q[1], q[2], Math.cos(mid), 0.08, Math.sin(mid));
+      this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      this.n += 4;
+    }
+    if (capTop) {
+      const base = this.n;
+      for (let i = 0; i < n; i++) {
+        const a = rot + (i / n) * Math.PI * 2;
+        push(cx + Math.cos(a) * rx * taper + lean, y1, cz + Math.sin(a) * rz * taper * squash, 0, 1, 0);
+      }
+      this.n += n;
+      for (let i = 1; i < n - 1; i++) this.idx.push(base, base + i, base + i + 1);
+    }
+    if (capBottom) {
+      const base = this.n;
+      for (let i = n - 1; i >= 0; i--) {
+        const a = rot + (i / n) * Math.PI * 2;
+        push(cx + Math.cos(a) * rx, y0, cz + Math.sin(a) * rz * squash, 0, -1, 0);
+      }
+      this.n += n;
+      for (let i = 1; i < n - 1; i++) this.idx.push(base, base + i, base + i + 1);
+    }
+  }
+
   build() {
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
@@ -120,60 +172,103 @@ export const ACC_SLOT = {
 export function buildPedGeometry() {
   const b = new PedBuilder();
   const S = PART.SKIN, H = PART.HAIR, T = PART.TOP, B = PART.BOTTOM, SH = PART.SHOE, A = PART.ACCENT;
+  const LIMB = sides(8);       // arms and legs
+  const TRUNK = sides(10);     // torso, head
+  const detailed = DETAIL.geo >= 2;
 
   // ---- legs ----------------------------------------------------------
   for (const [side, uleg, lleg] of [[1, BONE.ULEG_L, BONE.LLEG_L], [-1, BONE.ULEG_R, BONE.LLEG_R]]) {
     const x = side * 0.105;
-    b.box(x, 0.675, 0, 0.155, 0.42, 0.165, uleg, B, 0, 0.9);           // thigh (trousers)
-    b.box(x, 0.27, 0, 0.125, 0.42, 0.135, lleg, B, 0, 0.92);           // shin (trousers)
-    b.box(x, 0.27, 0, 0.128, 0.40, 0.138, lleg, S, ACC_SLOT.SHORTS);   // bare shin variant
-    b.box(x, 0.675, 0, 0.150, 0.30, 0.160, uleg, B, ACC_SLOT.SHORTS);  // shorts hem cover
-    b.box(x, 0.045, 0.028, 0.135, 0.09, 0.26, lleg, SH);               // shoe
+    // Thigh: narrow at the knee, broad at the hip. The prism runs bottom to
+    // top, so "thicker further up" is taper > 1.
+    b.limb(x, 0.685, 0, 0.070, 0.074, 0.41, LIMB, uleg, B, 0, { taper: 1.30, capBottom: false });
+    b.limb(x, 0.275, 0, 0.056, 0.060, 0.41, LIMB, lleg, B, 0, { taper: 1.26, capBottom: false });
+    // bare-leg variants for anyone in shorts
+    b.limb(x, 0.275, 0, 0.054, 0.058, 0.40, LIMB, lleg, S, ACC_SLOT.SHORTS, { taper: 1.26 });
+    b.limb(x, 0.70, 0, 0.072, 0.076, 0.30, LIMB, uleg, B, ACC_SLOT.SHORTS, { taper: 1.24 });
+    // shoe: sole, upper, toe box
+    b.box(x, 0.022, 0.030, 0.135, 0.044, 0.265, lleg, SH);
+    b.limb(x, 0.075, -0.012, 0.062, 0.070, 0.09, LIMB, lleg, SH, 0, { taper: 0.9 });
+    b.box(x, 0.058, 0.088, 0.118, 0.062, 0.11, lleg, SH, 0, 0.8);
+    if (detailed) {
+      b.box(x, 0.086, 0.03, 0.10, 0.02, 0.10, lleg, SH, 0, 0.9);          // laces
+      b.box(x, 0.014, -0.09, 0.12, 0.028, 0.06, lleg, SH);                // heel
+    }
   }
   // skirt / dress volume over the thighs
-  b.box(0, 0.72, 0, 0.40, 0.46, 0.30, BONE.PELVIS, T, ACC_SLOT.DRESS, 1.24);
+  b.limb(0, 0.72, 0, 0.20, 0.15, 0.46, TRUNK, BONE.PELVIS, T, ACC_SLOT.DRESS, { taper: 1.34 });
 
   // ---- pelvis + torso -------------------------------------------------
-  b.box(0, 0.945, 0, 0.315, 0.17, 0.205, BONE.PELVIS, B, 0, 1.02);
-  b.box(0, 1.18, 0, 0.335, 0.32, 0.215, BONE.TORSO, T, 0, 1.08);       // waist → chest
-  b.box(0, 1.38, 0, 0.395, 0.16, 0.225, BONE.TORSO, T, 0, 0.98);       // shoulders
+  b.limb(0, 0.945, 0, 0.152, 0.102, 0.17, TRUNK, BONE.PELVIS, B, 0, { taper: 1.04 });
+  b.limb(0, 1.12, 0, 0.158, 0.106, 0.20, TRUNK, BONE.TORSO, T, 0, { taper: 0.97, capBottom: false });
+  b.limb(0, 1.29, 0, 0.153, 0.103, 0.16, TRUNK, BONE.TORSO, T, 0, { taper: 1.16, capBottom: false });
+  b.limb(0, 1.398, 0, 0.178, 0.118, 0.15, TRUNK, BONE.TORSO, T, 0, { taper: 0.88, capBottom: false });
+  if (detailed) {
+    // shirt placket and collar — small, but they read at conversation range
+    b.box(0.0, 1.20, 0.108, 0.036, 0.30, 0.022, BONE.TORSO, T, 0, 1);
+    b.limb(0, 1.455, 0, 0.108, 0.078, 0.05, TRUNK, BONE.TORSO, T, 0, { taper: 0.86 });
+    b.box(0, 1.02, 0, 0.33, 0.045, 0.225, BONE.PELVIS, A, 0, 1.0);         // waistband
+  }
   // Patagonia-style vest
-  b.box(0, 1.24, 0, 0.375, 0.42, 0.255, BONE.TORSO, A, ACC_SLOT.VEST, 1.02);
+  b.limb(0, 1.24, 0, 0.188, 0.128, 0.42, TRUNK, BONE.TORSO, A, ACC_SLOT.VEST, { taper: 1.0 });
   // duty vest + belt for APD
-  b.box(0, 1.26, 0, 0.40, 0.40, 0.27, BONE.TORSO, A, ACC_SLOT.DUTY, 1.0);
+  b.limb(0, 1.26, 0, 0.200, 0.136, 0.40, TRUNK, BONE.TORSO, A, ACC_SLOT.DUTY, { taper: 1.0 });
   b.box(0, 1.01, 0, 0.34, 0.09, 0.23, BONE.PELVIS, A, ACC_SLOT.DUTY, 1.0);
-  b.box(0.20, 0.95, 0.02, 0.07, 0.16, 0.08, BONE.PELVIS, A, ACC_SLOT.DUTY);  // holster
+  b.box(0.20, 0.95, 0.02, 0.07, 0.16, 0.08, BONE.PELVIS, A, ACC_SLOT.DUTY);   // holster
+  b.box(-0.17, 1.34, 0.09, 0.05, 0.09, 0.04, BONE.TORSO, A, ACC_SLOT.DUTY);   // shoulder radio
 
   // ---- arms ------------------------------------------------------------
   for (const [side, uarm, farm] of [[1, BONE.UARM_L, BONE.FARM_L], [-1, BONE.UARM_R, BONE.FARM_R]]) {
     const x = side * 0.215;
-    b.box(x, 1.285, 0, 0.105, 0.27, 0.115, uarm, T, 0, 0.94);   // sleeve
-    b.box(x, 1.02, 0, 0.088, 0.26, 0.095, farm, S, 0, 0.94);    // forearm
-    b.box(x, 0.875, 0.01, 0.082, 0.10, 0.10, farm, S);          // hand
+    b.limb(x, 1.29, 0, 0.048, 0.050, 0.27, LIMB, uarm, T, 0, { taper: 1.28, capBottom: false });
+    b.limb(x, 1.02, 0, 0.038, 0.040, 0.26, LIMB, farm, S, 0, { taper: 1.22, capBottom: false });
+    // deltoid cap, so the arm meets the shoulder instead of floating beside it
+    b.limb(x * 0.94, 1.418, 0, 0.062, 0.064, 0.085, LIMB, uarm, T, 0, { taper: 0.72 });
+    if (detailed) {
+      b.limb(x, 1.145, 0, 0.052, 0.054, 0.05, LIMB, farm, T, 0, { taper: 1.0 });   // cuff
+    }
+    // hand + thumb
+    b.limb(x, 0.885, 0.008, 0.036, 0.028, 0.095, 6, farm, S, 0, { taper: 1.12 });
+    b.box(x - side * 0.036, 0.905, 0.014, 0.026, 0.055, 0.03, farm, S);
   }
 
   // ---- head ------------------------------------------------------------
-  b.box(0, 1.495, 0, 0.088, 0.075, 0.088, BONE.HEAD, S);                  // neck
-  b.box(0, 1.63, 0.005, 0.175, 0.21, 0.19, BONE.HEAD, S, 0, 0.96);        // head
-  b.box(0, 1.715, 0.0, 0.185, 0.075, 0.20, BONE.HEAD, H, 0, 0.9);         // hair cap
-  b.box(0, 1.60, -0.085, 0.17, 0.16, 0.05, BONE.HEAD, H, 0);              // nape
-  b.box(0, 1.50, -0.10, 0.20, 0.30, 0.09, BONE.HEAD, H, ACC_SLOT.LONGHAIR);  // long hair
-  b.box(0, 1.545, 0.075, 0.135, 0.075, 0.055, BONE.HEAD, H, ACC_SLOT.BEARD); // beard
+  b.limb(0, 1.495, 0, 0.045, 0.042, 0.075, 6, BONE.HEAD, S, 0, { taper: 1.1 });
+  // cranium and jaw as two stacked prisms, so the head has a chin
+  b.limb(0, 1.585, 0.004, 0.078, 0.088, 0.10, TRUNK, BONE.HEAD, S, 0, { taper: 1.12, capBottom: false });
+  b.limb(0, 1.685, 0.002, 0.088, 0.098, 0.10, TRUNK, BONE.HEAD, S, 0, { taper: 0.88, capBottom: false });
+  if (detailed) {
+    b.box(0, 1.635, 0.098, 0.030, 0.038, 0.030, BONE.HEAD, S);            // nose
+    b.box(0, 1.678, 0.092, 0.098, 0.018, 0.020, BONE.HEAD, H);            // brow
+    for (const sx of [-1, 1]) {
+      b.box(sx * 0.088, 1.632, -0.004, 0.020, 0.048, 0.036, BONE.HEAD, S); // ears
+    }
+  }
+  // hair
+  b.limb(0, 1.728, 0, 0.094, 0.102, 0.072, TRUNK, BONE.HEAD, H, 0, { taper: 0.82 });
+  b.box(0, 1.60, -0.088, 0.17, 0.16, 0.05, BONE.HEAD, H, 0);
+  b.limb(0, 1.50, -0.10, 0.10, 0.055, 0.30, 8, BONE.HEAD, H, ACC_SLOT.LONGHAIR, { taper: 0.9 });
+  b.box(0, 1.545, 0.075, 0.135, 0.075, 0.055, BONE.HEAD, H, ACC_SLOT.BEARD);
   // ball cap
-  b.box(0, 1.745, 0, 0.19, 0.085, 0.20, BONE.HEAD, A, ACC_SLOT.BALLCAP, 0.85);
-  b.box(0, 1.715, 0.135, 0.185, 0.03, 0.13, BONE.HEAD, A, ACC_SLOT.BALLCAP);
+  b.limb(0, 1.748, 0, 0.098, 0.104, 0.082, TRUNK, BONE.HEAD, A, ACC_SLOT.BALLCAP, { taper: 0.8 });
+  b.box(0, 1.714, 0.135, 0.185, 0.028, 0.13, BONE.HEAD, A, ACC_SLOT.BALLCAP, 0.85);
   // wide-brim / cowboy hat
-  b.box(0, 1.755, 0, 0.20, 0.13, 0.205, BONE.HEAD, A, ACC_SLOT.HAT, 0.86);
-  b.box(0, 1.70, 0, 0.44, 0.035, 0.44, BONE.HEAD, A, ACC_SLOT.HAT);
+  b.limb(0, 1.762, 0, 0.104, 0.108, 0.125, TRUNK, BONE.HEAD, A, ACC_SLOT.HAT, { taper: 0.86 });
+  b.limb(0, 1.702, 0, 0.225, 0.215, 0.032, TRUNK, BONE.HEAD, A, ACC_SLOT.HAT, { taper: 1.0 });
 
   // ---- carried things ---------------------------------------------------
-  b.box(0, 1.22, -0.20, 0.30, 0.40, 0.16, BONE.TORSO, A, ACC_SLOT.BACKPACK, 0.95);
+  b.box(0, 1.22, -0.205, 0.30, 0.40, 0.16, BONE.TORSO, A, ACC_SLOT.BACKPACK, 0.95);
   b.box(0, 1.42, -0.20, 0.26, 0.08, 0.14, BONE.TORSO, A, ACC_SLOT.BACKPACK);
-  b.box(0.30, 1.02, 0.0, 0.22, 0.28, 0.10, BONE.TORSO, A, ACC_SLOT.TOTE);   // tote bag
-  b.box(0.26, 1.25, 0.0, 0.03, 0.24, 0.03, BONE.TORSO, A, ACC_SLOT.TOTE);   // strap
-  b.box(0, 1.16, -0.26, 0.36, 0.16, 0.20, BONE.TORSO, A, ACC_SLOT.BEDROLL, 1.0);
+  b.box(0, 1.06, -0.24, 0.22, 0.10, 0.09, BONE.TORSO, A, ACC_SLOT.BACKPACK);      // bottle pocket
+  for (const sx of [-1, 1]) {
+    b.box(sx * 0.11, 1.30, -0.10, 0.045, 0.30, 0.045, BONE.TORSO, A, ACC_SLOT.BACKPACK);
+  }
+  b.box(0.30, 1.02, 0.0, 0.22, 0.28, 0.10, BONE.TORSO, A, ACC_SLOT.TOTE);
+  b.box(0.26, 1.25, 0.0, 0.03, 0.24, 0.03, BONE.TORSO, A, ACC_SLOT.TOTE);
+  b.limb(0, 1.16, -0.27, 0.19, 0.10, 0.16, 8, BONE.TORSO, A, ACC_SLOT.BEDROLL, { taper: 1.0, rot: 0 });
   // guitar case slung across the back
-  b.box(-0.06, 1.16, -0.22, 0.34, 0.86, 0.14, BONE.TORSO, A, ACC_SLOT.GUITAR, 0.72);
+  b.box(-0.06, 1.16, -0.225, 0.34, 0.86, 0.14, BONE.TORSO, A, ACC_SLOT.GUITAR, 0.72);
+  b.box(-0.06, 1.52, -0.215, 0.14, 0.22, 0.11, BONE.TORSO, A, ACC_SLOT.GUITAR, 0.9);
 
   return b.build();
 }

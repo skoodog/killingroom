@@ -7,6 +7,7 @@
 // Get the silhouettes right and the skyline reads as Austin from a mile away.
 
 import { TILE } from '../gfx/textures.js';
+import { DETAIL, sides, scaled } from '../gfx/detail.js';
 import { clamp, lerp, TAU } from '../core/mathx.js';
 
 const NEUTRAL = [0x9a, 0xa5, 0xae];
@@ -30,24 +31,56 @@ const FLOOR_H = 3.9;
 /* shared parts                                                        */
 /* ------------------------------------------------------------------ */
 
-/** A vertical shaft with optional per-face tiles and a shadow gradient. */
-function shaft(mb, cx, cz, w, d, y0, y1, tile, tint, uvS = 1 / 15.2) {
+/**
+ * A vertical shaft: chamfered corners, a floor-slab band every few storeys,
+ * and a separately-laid roof.
+ *
+ * The chamfers are the cheapest big win in the whole renderer — eight faces
+ * instead of four means a tower catches two different sun angles down its
+ * corner, which is most of what makes a glass box read as a glass box rather
+ * than a flat rectangle.
+ */
+function shaft(mb, cx, cz, w, d, y0, y1, tile, tint, uvS = 1 / 15.2, opts = {}) {
   const h = y1 - y0;
+  if (h <= 0.01) return;
   const t = [tile, tile, TILE.ROOF_GRAVEL, TILE.DARK, tile, tile];
-  // Skip the top face and lay the roof separately: a brick building should
-  // not have a brick-tinted roof.
-  mb.box(cx, (y0 + y1) / 2, cz, w, h, d, t, tint, uvS, 4);
-  mb.ground(cx - w / 2, cz - d / 2, cx + w / 2, cz + d / 2, y1, TILE.ROOF_GRAVEL, [1, 1, 1], 0.3);
+  const bev = opts.bevel ?? (DETAIL.bevel ? Math.min(w, d) * 0.085 : 0);
+
+  if (bev > 0.05) mb.bevelBox(cx, (y0 + y1) / 2, cz, w, h, d, bev, t, tint, uvS, 4 | 8);
+  else mb.box(cx, (y0 + y1) / 2, cz, w, h, d, t, tint, uvS, 4);
+
+  // Floor-slab edges. On a real tower these are the strongest horizontal
+  // shadow line there is; skipping them is why untextured boxes look dead.
+  const every = opts.bands ?? DETAIL.slabBands;
+  if (every > 0) {
+    const step = FLOOR_H * every;
+    const slab = [TILE.PAINT_WHITE, TILE.PAINT_WHITE, TILE.PAINT_WHITE, TILE.PAINT_WHITE,
+      TILE.PAINT_WHITE, TILE.PAINT_WHITE];
+    const bandTint = (opts.bandTint || tint).map(v => v * 0.96);
+    for (let y = y0 + step; y < y1 - 0.6; y += step) {
+      mb.box(cx, y, cz, w + 0.55, 0.36, d + 0.55, slab, bandTint, 0.34);
+    }
+  }
+  if (!(opts.skipRoof)) {
+    mb.ground(cx - w / 2, cz - d / 2, cx + w / 2, cz + d / 2, y1, TILE.ROOF_GRAVEL, [1, 1, 1], 0.3);
+  }
 }
 
 /** Parapet lip so roofs don't read as a razor edge. */
 function parapet(mb, cx, cz, w, d, y, h = 1.1, tile = TILE.CONCRETE, tint = [1, 1, 1]) {
   const t = [tile, tile, tile, tile, tile, tile];
-  mb.box(cx, y + h / 2, cz, w, h, 1.0, t, tint, 0.3);
-  mb.box(cx, y + h / 2, cz - d / 2 + 0.5, w, h, 1.0, t, tint, 0.3);
-  mb.box(cx, y + h / 2, cz + d / 2 - 0.5, w, h, 1.0, t, tint, 0.3);
-  mb.box(cx - w / 2 + 0.5, y + h / 2, cz, 1.0, h, d, t, tint, 0.3);
-  mb.box(cx + w / 2 - 0.5, y + h / 2, cz, 1.0, h, d, t, tint, 0.3);
+  const cap = [TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE];
+  const walls = [
+    [cx, cz - d / 2 + 0.5, w, 1.0],
+    [cx, cz + d / 2 - 0.5, w, 1.0],
+    [cx - w / 2 + 0.5, cz, 1.0, d],
+    [cx + w / 2 - 0.5, cz, 1.0, d],
+  ];
+  for (const [px, pz, sw, sd] of walls) {
+    mb.box(px, y + h / 2, pz, sw, h, sd, t, tint, 0.3);
+    // coping stone overhanging the wall by a few centimetres
+    mb.box(px, y + h + 0.06, pz, sw + 0.22, 0.12, sd + 0.22, cap, tint.map(v => v * 1.06), 0.4);
+  }
 }
 
 /** Mechanical penthouse, cooling towers, mast — the stuff on every roof. */
@@ -64,15 +97,40 @@ export function roofKit(mb, rng, cx, cz, w, d, y, opts = {}) {
   mb.box(cx + ox, y + ph / 2, cz + oz, pw, ph, pd, conc, tint, 0.25);
 
   if (tanks) {
-    const n = 1 + rng.int(0, 2);
+    const n = scaled(2, 1) + rng.int(0, 2);
+    const seg = sides(10);
     for (let i = 0; i < n; i++) {
       const tw = (2.2 + rng.next() * 2.2) * scale;
       const th = (1.8 + rng.next() * 1.8) * scale;
       const tx = cx + (rng.next() - 0.5) * (w - tw - 3);
       const tz = cz + (rng.next() - 0.5) * (d - tw - 3);
-      mb.box(tx, y + th / 2, tz, tw, th, tw, grey, [0.85, 0.86, 0.88], 0.4);
-      // fan grille
-      mb.box(tx, y + th + 0.12, tz, tw * 0.7, 0.24, tw * 0.7, grey, [0.6, 0.62, 0.64], 0.5);
+      if (rng.chance(0.5)) {
+        // cylindrical cooling tower
+        mb.prism(tx, y + th / 2, tz, tw / 2, tw / 2, th, seg, grey, [0.85, 0.86, 0.88], 0.4,
+          { capTop: true });
+        mb.prism(tx, y + th + 0.16, tz, tw * 0.34, tw * 0.34, 0.32, seg, grey, [0.55, 0.57, 0.6], 0.6,
+          { capTop: true });
+      } else {
+        mb.box(tx, y + th / 2, tz, tw, th, tw, grey, [0.85, 0.86, 0.88], 0.4);
+        mb.box(tx, y + th + 0.12, tz, tw * 0.7, 0.24, tw * 0.7, grey, [0.6, 0.62, 0.64], 0.5);
+      }
+      // duct run back to the penthouse
+      if (rng.chance(0.55)) {
+        mb.box((tx + cx) / 2, y + 0.35, tz, Math.abs(cx - tx) + 0.4, 0.7, 0.7,
+          grey, [0.78, 0.79, 0.82], 0.5);
+      }
+    }
+  }
+  // Rooftop handrail. Four continuous rails rather than a post every metre —
+  // from any distance you can actually see a roof from, it reads the same and
+  // costs a fiftieth of the triangles.
+  if (DETAIL.geo >= 2) {
+    for (const [px, pz, sw, sd] of [
+      [cx, cz - d / 2, w, 0.07], [cx, cz + d / 2, w, 0.07],
+      [cx - w / 2, cz, 0.07, d], [cx + w / 2, cz, 0.07, d],
+    ]) {
+      mb.box(px, y + 1.02, pz, sw, 0.07, sd, grey, [0.7, 0.71, 0.74], 1.0);
+      mb.box(px, y + 0.62, pz, sw, 0.06, sd, grey, [0.62, 0.63, 0.66], 1.0);
     }
   }
 
@@ -159,10 +217,15 @@ STYLES.frost = (mb, L, cx, cz, w, d, ctx) => {
     [TILE.LIMESTONE_WIN, TILE.LIMESTONE_WIN, TILE.ROOF_GRAVEL, TILE.DARK, TILE.LIMESTONE_WIN, TILE.LIMESTONE_WIN],
     stone, 1 / 15.2);
   const colT = [TILE.LIMESTONE, TILE.LIMESTONE, TILE.LIMESTONE, TILE.DARK, TILE.LIMESTONE, TILE.LIMESTONE];
+  const colSeg = sides(10);
   for (let i = 0; i < 8; i++) {
     const t = (i + 0.5) / 8;
-    mb.box(cx - pw / 2 + t * pw, 4.2, cz + pd / 2 + 0.6, 1.5, 8.4, 1.5, colT, stone, 0.35);
-    mb.box(cx - pw / 2 + t * pw, 4.2, cz - pd / 2 - 0.6, 1.5, 8.4, 1.5, colT, stone, 0.35);
+    for (const zz of [cz + pd / 2 + 0.6, cz - pd / 2 - 0.6]) {
+      const x = cx - pw / 2 + t * pw;
+      mb.box(x, 0.35, zz, 1.9, 0.7, 1.9, colT, stone, 0.4);              // plinth
+      mb.prism(x, 4.6, zz, 0.72, 0.72, 8.0, colSeg, colT, stone, 0.35, { taper: 0.9 });
+      mb.box(x, 8.85, zz, 1.8, 0.5, 1.8, colT, stone.map(v => v * 1.05), 0.4); // capital
+    }
   }
   parapet(mb, cx, cz, pw, pd, ph, 1.4, TILE.LIMESTONE, stone);
 

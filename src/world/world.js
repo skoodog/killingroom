@@ -5,6 +5,7 @@ import { buildAtlas, TILE } from '../gfx/textures.js';
 import {
   createCityMaterial, createWaterMaterial, MeshBuilder, setAnisotropy,
 } from '../gfx/materials.js';
+import { configureDetail, DETAIL } from '../gfx/detail.js';
 import { RNG } from '../core/rng.js';
 import { clamp, lerp, TAU, rectOverlaps } from '../core/mathx.js';
 import { ColliderWorld } from '../physics/collision.js';
@@ -87,6 +88,7 @@ export class World {
     };
 
     await step(4, 'Painting surfaces', () => {
+      configureDetail(this.settings.tier);
       const size = this.settings.tierName === 'low' ? 128 : this.settings.tierName === 'medium' ? 192 : 256;
       this.atlas = buildAtlas(size, 0xa057);
       setAnisotropy(this.atlas.map, this.engine.maxAnisotropy);

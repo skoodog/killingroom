@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { TILE, makeGlowSprite } from '../gfx/textures.js';
+import { DETAIL, sides } from '../gfx/detail.js';
 import { TAU, lerp, clamp } from '../core/mathx.js';
 import { CURB_H } from './roads.js';
 
@@ -21,11 +22,26 @@ const CONC = [TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.C
 export function streetlight(mb, x, z, y, dir, lights, cool = false) {
   const h = 8.4;
   const pole = METAL();
-  mb.box(x, y + 0.25, z, 0.62, 0.5, 0.62, CONC, [0.85, 0.85, 0.83], 0.6);
-  mb.box(x, y + h / 2, z, 0.22, h, 0.22, pole, [0.55, 0.57, 0.6], 0.6);
+  const seg = sides(8);
+  mb.prism(x, y + 0.28, z, 0.34, 0.34, 0.56, seg, CONC, [0.85, 0.85, 0.83], 0.6, { taper: 0.82 });
+  mb.prism(x, y + h / 2, z, 0.115, 0.115, h, seg, pole, [0.55, 0.57, 0.6], 0.6, { taper: 0.7 });
   const ax = Math.cos(dir), az = Math.sin(dir);
-  mb.box(x + ax * 1.5, y + h - 0.35, z + az * 1.5, Math.abs(ax) * 3 + 0.18, 0.18, Math.abs(az) * 3 + 0.18,
-    pole, [0.55, 0.57, 0.6], 0.6);
+  // gently rising mast arm rather than a flat stub
+  if (DETAIL.geo >= 2) {
+    const steps = 3;
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps, t1 = (i + 1) / steps;
+      const r0 = 3.0 * t0, r1 = 3.0 * t1;
+      const y0 = y + h - 0.75 + Math.sin(t0 * 1.2) * 0.5;
+      const y1 = y + h - 0.75 + Math.sin(t1 * 1.2) * 0.5;
+      mb.box(x + ax * (r0 + r1) / 2, (y0 + y1) / 2 + 0.1, z + az * (r0 + r1) / 2,
+        Math.abs(ax) * (r1 - r0) + 0.14, 0.16, Math.abs(az) * (r1 - r0) + 0.14,
+        pole, [0.55, 0.57, 0.6], 0.7);
+    }
+  } else {
+    mb.box(x + ax * 1.5, y + h - 0.35, z + az * 1.5, Math.abs(ax) * 3 + 0.18, 0.18,
+      Math.abs(az) * 3 + 0.18, pole, [0.55, 0.57, 0.6], 0.6);
+  }
   const hx = x + ax * 3.0, hz = z + az * 3.0;
   mb.box(hx, y + h - 0.55, hz, 0.9, 0.34, 0.55, pole, [0.6, 0.62, 0.64], 0.5);
   mb.box(hx, y + h - 0.78, hz, 0.72, 0.16, 0.42,
@@ -37,8 +53,8 @@ export function streetlight(mb, x, z, y, dir, lights, cool = false) {
 export function trafficSignal(mb, x, z, y, dir, phase) {
   const h = 6.6;
   const pole = METAL();
-  mb.box(x, y + 0.2, z, 0.7, 0.4, 0.7, CONC, [0.85, 0.85, 0.83], 0.6);
-  mb.box(x, y + h / 2, z, 0.2, h, 0.2, pole, [0.32, 0.34, 0.32], 0.6);
+  mb.prism(x, y + 0.22, z, 0.36, 0.36, 0.44, sides(8), CONC, [0.85, 0.85, 0.83], 0.6, { taper: 0.85 });
+  mb.prism(x, y + h / 2, z, 0.105, 0.105, h, sides(8), pole, [0.32, 0.34, 0.32], 0.6);
   const ax = Math.cos(dir), az = Math.sin(dir);
   const armL = 6.5;
   mb.box(x + ax * armL / 2, y + h - 0.2, z + az * armL / 2,
@@ -73,23 +89,32 @@ export function bench(mb, x, z, y, rot) {
 }
 
 export function trashCan(mb, x, z, y, rng) {
-  mb.box(x, y + 0.48, z, 0.62, 0.96, 0.62, METAL(), [0.35, 0.38, 0.36], 0.9);
-  mb.box(x, y + 1.0, z, 0.7, 0.1, 0.7, DARKMETAL, [0.3, 0.32, 0.3], 0.9);
+  const seg = sides(8);
+  mb.prism(x, y + 0.48, z, 0.32, 0.32, 0.96, seg, METAL(), [0.35, 0.38, 0.36], 0.9, { taper: 1.08 });
+  mb.prism(x, y + 1.0, z, 0.37, 0.37, 0.12, seg, DARKMETAL, [0.3, 0.32, 0.3], 0.9, { capTop: true });
+  if (DETAIL.geo >= 2) {
+    mb.prism(x, y + 1.12, z, 0.2, 0.2, 0.14, seg, DARKMETAL, [0.22, 0.24, 0.22], 1.0, { capTop: false });
+  }
 }
 
 export function hydrant(mb, x, z, y) {
   const red = [1.45, 0.55, 0.4];
-  mb.box(x, y + 0.3, z, 0.28, 0.6, 0.28, METAL(TILE.PAINT_WHITE), red, 1.4);
-  mb.box(x, y + 0.66, z, 0.36, 0.14, 0.36, METAL(TILE.PAINT_WHITE), red, 1.4);
-  mb.box(x, y + 0.78, z, 0.16, 0.14, 0.16, METAL(TILE.PAINT_WHITE), red, 1.4);
-  for (const s of [-1, 1]) {
-    mb.box(x + s * 0.2, y + 0.44, z, 0.14, 0.14, 0.14, METAL(TILE.PAINT_WHITE), red, 1.4);
+  const m = METAL(TILE.PAINT_WHITE);
+  const seg = sides(8);
+  mb.prism(x, y + 0.08, z, 0.22, 0.22, 0.16, seg, m, red.map(v => v * 0.8), 1.4, { taper: 0.85 });
+  mb.prism(x, y + 0.38, z, 0.16, 0.16, 0.48, seg, m, red, 1.4, { taper: 0.94 });
+  mb.prism(x, y + 0.66, z, 0.2, 0.2, 0.1, seg, m, red, 1.4, { capTop: true });
+  mb.prism(x, y + 0.78, z, 0.085, 0.085, 0.16, seg, m, red.map(v => v * 1.1), 1.4, { capTop: true });
+  for (const sx of [-1, 1]) {
+    mb.prism(x + sx * 0.2, y + 0.44, z, 0.07, 0.07, 0.14, 6, m, red.map(v => v * 0.9), 1.4,
+      { capTop: true });
   }
 }
 
 export function parkingMeter(mb, x, z, y) {
-  mb.box(x, y + 0.6, z, 0.09, 1.2, 0.09, METAL(), [0.4, 0.42, 0.44], 1.2);
+  mb.prism(x, y + 0.6, z, 0.045, 0.045, 1.2, sides(6), METAL(), [0.4, 0.42, 0.44], 1.2);
   mb.box(x, y + 1.32, z, 0.24, 0.34, 0.18, DARKMETAL, [0.3, 0.32, 0.34], 1.2);
+  mb.box(x, y + 1.4, z + 0.1, 0.15, 0.16, 0.03, METAL(TILE.LAMP_COOL), [1, 1, 1], 1.6);
 }
 
 /** CapMetro shelter — glass roof, bench, route sign. */
@@ -146,8 +171,9 @@ export function bikeRack(mb, x, z, y, rot) {
   for (let i = 0; i < n; i++) {
     const o = (i - 1) * 0.8;
     const px = x + Math.cos(rot) * o, pz = z + Math.sin(rot) * o;
-    mb.box(px, y + 0.45, pz, 0.08, 0.9, 0.08, METAL(), [0.45, 0.47, 0.5], 1.2);
-    mb.box(px, y + 0.88, pz, 0.5, 0.08, 0.08, METAL(), [0.45, 0.47, 0.5], 1.2);
+    mb.prism(px, y + 0.45, pz, 0.04, 0.04, 0.9, sides(6), METAL(), [0.45, 0.47, 0.5], 1.2);
+    mb.prism(px, y + 0.88, pz, 0.04, 0.04, 0.5, sides(6), METAL(), [0.45, 0.47, 0.5], 1.2,
+      { rot: Math.PI / 2 });
   }
 }
 
@@ -306,7 +332,7 @@ export function patio(mb, x, z, y, rng, n = 3) {
         METAL(TILE.PAINT_WHITE), [0.5, 0.52, 0.55], 1.2);
     }
     if (rng.chance(0.6)) {
-      mb.box(px, y + 1.2, pz, 0.07, 2.4, 0.07, METAL(), [0.5, 0.5, 0.5], 1.2);
+      mb.prism(px, y + 1.2, pz, 0.035, 0.035, 2.4, sides(6), METAL(), [0.5, 0.5, 0.5], 1.2);
       for (let k = 0; k < 4; k++) {
         const a = (k / 4) * TAU;
         mb.box(px + Math.cos(a) * 0.7, y + 2.3, pz + Math.sin(a) * 0.7, 1.5, 0.07, 1.5,

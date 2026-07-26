@@ -9,6 +9,11 @@
 
 import * as THREE from 'three';
 
+function clampInt(v, lo, hi) {
+  const n = Math.round(v);
+  return n < lo ? lo : n > hi ? hi : n;
+}
+
 /* ------------------------------------------------------------------ */
 
 const ATLAS_PARS_VERT = /* glsl */`
@@ -192,6 +197,135 @@ export class MeshBuilder {
       [x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0],
       tileIdx, [0, vv, uu, vv, uu, 0, 0, 0], color, [0, 1, 0]
     );
+  }
+
+  /**
+   * Ground plane cut into a grid. More vertices buys per-corner shading —
+   * darker in the gutter, lighter down the crown of the road — which is what
+   * stops a 100 m stretch of asphalt reading as one flat sheet.
+   * `shade(u,v)` returns a brightness multiplier in roughly [0.8, 1.1].
+   */
+  groundGrid(x0, z0, x1, z1, y, tileIdx, color, uvScale, cellSize, shade) {
+    // `cellSize` is a target edge length in metres. Driving the subdivision
+    // from world size rather than a division count keeps a 260 m road from
+    // exploding into thousands of slivers while a 4 m kerb strip stays whole.
+    const cs = Math.max(2, cellSize || 8);
+    const nx = clampInt((x1 - x0) / cs, 1, 24);
+    const nz = clampInt((z1 - z0) / cs, 1, 48);
+    const t = this.rect(tileIdx);
+    const cr = color?.[0] ?? 1, cg = color?.[1] ?? 1, cb = color?.[2] ?? 1;
+    const base = this._v;
+    for (let j = 0; j <= nz; j++) {
+      for (let i = 0; i <= nx; i++) {
+        const u = i / nx, v = j / nz;
+        const x = x0 + (x1 - x0) * u, z = z0 + (z1 - z0) * v;
+        const k = shade ? shade(u, v, x, z) : 1;
+        this.pos.push(x, y, z);
+        this.nrm.push(0, 1, 0);
+        this.uv.push((x - x0) * uvScale, (z - z0) * uvScale);
+        this.col.push(cr * k, cg * k, cb * k);
+        this.tile.push(t[0], t[1], t[2], t[3]);
+      }
+    }
+    this._v += (nx + 1) * (nz + 1);
+    const row = nx + 1;
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) {
+        const a = base + j * row + i, b = a + 1, c = a + row, d = c + 1;
+        this.idx.push(a, c, b, b, c, d);
+      }
+    }
+  }
+
+  /**
+   * Tapered N-sided prism. Poles, trunks, columns, tower shafts — anything
+   * that reads better round than square.
+   * @param {number} taper top radius as a fraction of the bottom
+   */
+  prism(cx, cy, cz, rx, rz, h, sides, tiles, color, uvScale = 1, opts = {}) {
+    const { taper = 1, capTop = true, capBottom = false, rot = 0, twist = 0 } = opts;
+    const n = Math.max(3, sides | 0);
+    const y0 = cy - h / 2, y1 = cy + h / 2;
+    const circ = Math.PI * (rx + rz);
+    const vv = h * uvScale;
+    for (let i = 0; i < n; i++) {
+      const a0 = rot + (i / n) * Math.PI * 2;
+      const a1 = rot + ((i + 1) / n) * Math.PI * 2;
+      const b0 = a0 + twist, b1 = a1 + twist;
+      const x0 = cx + Math.cos(a0) * rx, z0 = cz + Math.sin(a0) * rz;
+      const x1 = cx + Math.cos(a1) * rx, z1 = cz + Math.sin(a1) * rz;
+      const tx0 = cx + Math.cos(b0) * rx * taper, tz0 = cz + Math.sin(b0) * rz * taper;
+      const tx1 = cx + Math.cos(b1) * rx * taper, tz1 = cz + Math.sin(b1) * rz * taper;
+      const u0 = (i / n) * circ * uvScale, u1 = ((i + 1) / n) * circ * uvScale;
+      const mid = (a0 + a1) / 2;
+      this.quad(
+        [x0, y0, z0], [x1, y0, z1], [tx1, y1, tz1], [tx0, y1, tz0],
+        tiles[0], [u0, vv, u1, vv, u1, 0, u0, 0], color,
+        [Math.cos(mid), 0, Math.sin(mid)]
+      );
+    }
+    if (capTop) {
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const a = rot + twist + (i / n) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(a) * rx * taper, z: cz + Math.sin(a) * rz * taper });
+      }
+      this.polygon(pts, y1, tiles[2] ?? tiles[0], color, uvScale);
+    }
+    if (capBottom) {
+      const pts = [];
+      for (let i = n - 1; i >= 0; i--) {
+        const a = rot + (i / n) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(a) * rx, z: cz + Math.sin(a) * rz });
+      }
+      this.polygon(pts, y0, tiles[3] ?? tiles[0], color, uvScale, true);
+    }
+  }
+
+  /**
+   * A box with its four vertical corners chamfered — eight faces instead of
+   * four. Costs half again as many triangles and completely changes how a
+   * tower catches the light, because the chamfers pick up a different sun
+   * angle from the flats.
+   */
+  bevelBox(cx, cy, cz, sx, sy, sz, bevel, tiles, color, uvScale = 1, skip = 0) {
+    const b = Math.min(bevel, sx * 0.42, sz * 0.42);
+    if (b < 0.05) { this.box(cx, cy, cz, sx, sy, sz, tiles, color, uvScale, skip); return; }
+    const hx = sx / 2, hz = sz / 2;
+    const y0 = cy - sy / 2, y1 = cy + sy / 2;
+    // ring of 8 corners, counter-clockwise from +X/-Z
+    const ring = [
+      [hx, -hz + b], [hx, hz - b], [hx - b, hz], [-hx + b, hz],
+      [-hx, hz - b], [-hx, -hz + b], [-hx + b, -hz], [hx - b, -hz],
+    ];
+    const faceTile = [tiles[0], tiles[4], tiles[4], tiles[1], tiles[1], tiles[5], tiles[5], tiles[0]];
+    const vv = sy * uvScale;
+    let run = 0;
+    for (let i = 0; i < 8; i++) {
+      const p = ring[i], q = ring[(i + 1) % 8];
+      const ax = cx + p[0], az = cz + p[1];
+      const bx = cx + q[0], bz = cz + q[1];
+      const len = Math.hypot(bx - ax, bz - az);
+      const u0 = run * uvScale, u1 = (run + len) * uvScale;
+      run += len;
+      this.quad(
+        [ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az],
+        faceTile[i], [u0, vv, u1, vv, u1, 0, u0, 0], color
+      );
+    }
+    if (!(skip & 4)) {
+      this.polygon(ring.map(p => ({ x: cx + p[0], z: cz + p[1] })), y1, tiles[2], color, uvScale);
+    }
+    if (!(skip & 8)) {
+      this.polygon(ring.slice().reverse().map(p => ({ x: cx + p[0], z: cz + p[1] })),
+        y0, tiles[3], color, uvScale, true);
+    }
+  }
+
+  /** A thin horizontal band wrapped around a box — floor slabs, cornices. */
+  band(cx, cy, cz, sx, sz, h, out, tiles, color, uvScale = 0.3) {
+    const w = sx + out * 2, d = sz + out * 2;
+    this.box(cx, cy, cz, w, h, d, tiles, color, uvScale);
   }
 
   /** Horizontal polygon (fan triangulated) — parks, lake, plazas. */

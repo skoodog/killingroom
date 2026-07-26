@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { TILE, makeLeafSprite } from '../gfx/textures.js';
 import { createFoliageMaterial } from '../gfx/materials.js';
+import { DETAIL, sides, scaled } from '../gfx/detail.js';
 import { clamp, lerp, TAU } from '../core/mathx.js';
 import { RNG } from '../core/rng.js';
 import { CURB_H } from './roads.js';
@@ -57,7 +58,7 @@ function canopyGeometry(spec, seed) {
   const rng = new RNG(seed);
   const pos = [], nrm = [], uv = [], col = [], sway = [], idx = [];
   let v = 0;
-  const n = spec.cards;
+  const n = scaled(spec.cards, 6);
   const R = 1.0;
 
   for (let i = 0; i < n; i++) {
@@ -178,27 +179,53 @@ export class Forest {
       for (const it of g.items) {
         const mb = pick(it.x, it.z);
         if (!mb) continue;
-        const bark = [TILE.BARK, TILE.BARK, TILE.BARK, TILE.DARK, TILE.BARK, TILE.BARK];
+        const bark = [TILE.BARK, TILE.BARK, TILE.BARK, TILE.BARK, TILE.BARK, TILE.BARK];
+        const seg = sides(9);
         const n = it.multi;
         for (let k = 0; k < n; k++) {
           const off = n > 1 ? (k - (n - 1) / 2) * it.trunkR * 2.4 : 0;
           const r = it.trunkR * (n > 1 ? 0.7 : 1);
-          // faceted trunk: two crossed boxes reads round enough at distance
-          mb.box(it.x + off, it.y + it.trunkH / 2, it.z, r * 2, it.trunkH, r * 1.4,
-            bark, [1, 1, 1], 0.7);
-          mb.box(it.x + off, it.y + it.trunkH / 2, it.z, r * 1.4, it.trunkH, r * 2,
-            bark, [0.94, 0.94, 0.94], 0.7);
-          // root flare
-          mb.box(it.x + off, it.y + 0.25, it.z, r * 3, 0.5, r * 3, bark, [0.86, 0.86, 0.86], 0.7);
+          // Tapered round trunk in two segments — the flare at the base and
+          // the narrowing above it are most of what says "tree" in silhouette.
+          mb.prism(it.x + off, it.y + it.trunkH * 0.18, it.z, r * 1.55, r * 1.55,
+            it.trunkH * 0.36, seg, bark, [0.92, 0.92, 0.9], 0.7, { taper: 0.72 });
+          mb.prism(it.x + off, it.y + it.trunkH * 0.66, it.z, r * 1.12, r * 1.12,
+            it.trunkH * 0.62, seg, bark, [1, 1, 1], 0.7, { taper: 0.84, rot: 0.4 });
         }
-        if (spec.palm) continue;
-        // a couple of limbs for the oaks
-        if (spec.dropCrown > 0.3) {
-          for (let k = 0; k < 3; k++) {
-            const a = (k / 3) * TAU + it.yaw;
-            mb.box(it.x + Math.cos(a) * it.scale * 0.35, it.y + it.trunkH + 0.3,
-              it.z + Math.sin(a) * it.scale * 0.35,
-              it.scale * 0.8, it.trunkR * 1.1, it.trunkR * 1.1, bark, [0.9, 0.9, 0.9], 0.7);
+        if (spec.palm) {
+          // palms get a ringed trunk instead of limbs
+          if (DETAIL.geo >= 2) {
+            const rings = Math.round(it.trunkH / 0.55);
+            for (let k = 1; k < rings; k++) {
+              const y = it.y + (k / rings) * it.trunkH;
+              mb.prism(it.x, y, it.z, it.trunkR * 1.3, it.trunkR * 1.3, 0.1, seg,
+                bark, [0.86, 0.86, 0.84], 0.9, { capTop: false });
+            }
+          }
+          continue;
+        }
+        // Primary limbs. Live oaks in particular are all limb — the canopy
+        // cards sit on top of these rather than floating.
+        const limbs = spec.dropCrown > 0.3 ? scaled(4, 2) : scaled(3, 2);
+        for (let k = 0; k < limbs; k++) {
+          const a = (k / limbs) * TAU + it.yaw;
+          const reach = it.scale * (0.30 + (k % 2) * 0.14);
+          const rise = it.trunkH * 0.22 + it.scale * 0.18;
+          const lr = it.trunkR * 0.62;
+          mb.prism(
+            it.x + Math.cos(a) * reach * 0.5, it.y + it.trunkH + rise * 0.5,
+            it.z + Math.sin(a) * reach * 0.5,
+            lr, lr, Math.hypot(reach, rise), Math.max(4, seg - 3),
+            bark, [0.9, 0.9, 0.88], 0.7,
+            { taper: 0.55, rot: a }
+          );
+          if (DETAIL.geo >= 3) {
+            mb.prism(
+              it.x + Math.cos(a) * reach, it.y + it.trunkH + rise + it.scale * 0.12,
+              it.z + Math.sin(a) * reach,
+              lr * 0.55, lr * 0.55, it.scale * 0.3, 5, bark, [0.86, 0.86, 0.84], 0.8,
+              { taper: 0.4, rot: a * 1.7 }
+            );
           }
         }
       }

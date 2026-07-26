@@ -72,9 +72,22 @@ page.on('console', (m) => {
   logs.push(`[${m.type()}] ${t}`);
   if (m.type() === 'error') errors.push(t);
 });
+// SwiftShader takes its time with two million triangles and no GPU.
+// These budgets are about the software rasteriser, not the game.
+page.setDefaultTimeout(180000);
+page.setDefaultNavigationTimeout(180000);
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}\n${e.stack || ''}`));
 
 console.log('→ loading', url);
+// Force the high tier: the software rasteriser scores as a potato and
+// would otherwise auto-select 'low', hiding every bit of geometry detail.
+await page.addInitScript(() => {
+  try {
+    localStorage.setItem('killingroom.settings.v1',
+      JSON.stringify({ tier: 'high', crowdScale: 1, adaptive: false,
+        autoQuality: false, tierLocked: true }));
+  } catch {}
+});
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 
 // Wait for world generation.
@@ -127,12 +140,56 @@ async function shot(s) {
   }, s);
   // let the crowd populate and the shadows settle
   await page.waitForTimeout(1400);
-  await page.screenshot({ path: path.join(OUT, `${s.name}.png`) });
+  await page.screenshot({ timeout: 180000, path: path.join(OUT, `${s.name}.png`) });
   const fps = await page.evaluate(() => window.__game.engine.fps);
   console.log(`  ${s.name}  ${fps.toFixed(1)} fps (software raster)`);
 }
 
 for (const s of SHOTS) await shot(s);
+
+// ---- driving --------------------------------------------------------
+const drive = await page.evaluate(async () => {
+  const g = window.__game;
+  // Stand in the middle of Congress so there's traffic to grab.
+  g.player.pos.set(0, 0, -300);
+  g.player.applyCamera();
+  await new Promise(r => setTimeout(r, 900));
+  const hit = g.traffic.nearest(g.player.pos.x, g.player.pos.z, 400);
+  if (!hit) return { ok: false, why: 'no traffic in range' };
+  g.vehicles.enter(g.traffic.take(hit.car));
+  window.__startX = g.vehicles.active.x;
+  window.__startZ = g.vehicles.active.z;
+  return { ok: true, car: g.vehicles.active.name };
+});
+console.log('→ vehicle:', JSON.stringify(drive));
+
+if (drive.ok) {
+  // Hold the throttle for a couple of seconds and see if we actually move.
+  const before = await page.evaluate(() => ({ ...window.__game.vehicles.active }));
+  await page.evaluate(() => { window.__driveKeys = true; window.__game.input.keys.add('KeyW'); });
+  await page.waitForTimeout(2600);
+  await page.evaluate(() => window.__game.input.keys.add('KeyD'));
+  await page.waitForTimeout(4000);
+  await page.screenshot({ timeout: 180000, path: path.join(OUT, '15-driving.png') });
+  const after = await page.evaluate(() => {
+    const v = window.__game.vehicles;
+    return {
+      mph: +v.speedMph.toFixed(1),
+      moved: +Math.hypot(v.active.x - window.__startX, v.active.z - window.__startZ).toFixed(1),
+      slip: +v.active.slip.toFixed(2),
+      health: +v.active.health.toFixed(0),
+      camBehind: +Math.hypot(
+        window.__game.engine.camera.position.x - v.active.x,
+        window.__game.engine.camera.position.z - v.active.z).toFixed(1),
+    };
+  });
+  console.log('→ driving:', JSON.stringify(after));
+  await page.evaluate(() => {
+    window.__game.input.keys.delete('KeyW');
+    window.__game.input.keys.delete('KeyD');
+    window.__game.vehicles.exit();
+  });
+}
 
 // Exercise gameplay: fire every weapon, check nothing explodes.
 const fireCheck = await page.evaluate(async () => {
@@ -150,7 +207,7 @@ const fireCheck = await page.evaluate(async () => {
 });
 console.log('→ weapons:', fireCheck.join(' | '));
 await page.waitForTimeout(2500);
-await page.screenshot({ path: path.join(OUT, '11-wanted.png') });
+await page.screenshot({ timeout: 180000, path: path.join(OUT, '11-wanted.png') });
 
 const after = await page.evaluate(() => ({
   fps: window.__game.engine.fps,

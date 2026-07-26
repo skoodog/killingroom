@@ -26,10 +26,23 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
     '--ignore-gpu-blocklist', '--disable-dev-shm-usage'],
 });
-const page = await browser.newPage({ viewport: { width: 1000, height: 1000 } });
+const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
+// SwiftShader takes its time with two million triangles and no GPU.
+// These budgets are about the software rasteriser, not the game.
+page.setDefaultTimeout(180000);
+page.setDefaultNavigationTimeout(180000);
 page.on('pageerror', (e) => console.error('pageerror:', e.message));
 page.on('console', (m) => { if (m.type() === 'error') console.error('console:', m.text()); });
 
+// Force the high tier: the software rasteriser scores as a potato and
+// would otherwise auto-select 'low', hiding every bit of geometry detail.
+await page.addInitScript(() => {
+  try {
+    localStorage.setItem('killingroom.settings.v1',
+      JSON.stringify({ tier: 'high', crowdScale: 1, adaptive: false,
+        autoQuality: false, tierLocked: true }));
+  } catch {}
+});
 await page.goto('http://127.0.0.1:5198/', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => !!window.__game, { timeout: 120000 });
 console.log('world ready');
@@ -79,7 +92,7 @@ async function ortho(name, { x, y, z, lookX, lookY, lookZ, size, hour }) {
     const g = window.__game;
     g.engine.renderer.render(g.engine.scene, g.engine.camera);
   });
-  await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+  await page.screenshot({ timeout: 180000, path: path.join(OUT, `${name}.png`) });
   console.log('  ', name);
 }
 
@@ -124,7 +137,7 @@ async function elev(name, { x, y, z, tx, ty, tz, fov, hour }) {
     e.renderer.render(e.scene, cam);
   }, { x, y, z, tx, ty, tz, fov, hour });
   await page.waitForTimeout(900);
-  await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+  await page.screenshot({ timeout: 180000, path: path.join(OUT, `${name}.png`) });
   console.log('  ', name);
 }
 
@@ -239,7 +252,7 @@ await page.evaluate(() => {
   e.renderer.render(e.scene, cam);
 });
 await page.waitForTimeout(800);
-await page.screenshot({ path: path.join(OUT, 'ped-sheet.png') });
+await page.screenshot({ timeout: 180000, path: path.join(OUT, 'ped-sheet.png') });
 console.log('   ped-sheet', await page.evaluate(() => window.__sheetCount), 'people');
 
 // per-landmark audit: where each one actually landed

@@ -67,6 +67,7 @@ export class Engine {
     this._fpsFrames = 0;
     this._raf = 0;
     this._running = false;
+    this.onTiming = null;
     this._updaters = [];
     this._lastSize = [0, 0, 0];
 
@@ -191,7 +192,10 @@ export class Engine {
       this.fps = (this._fpsFrames * 1000) / this._fpsAcc;
       this._fpsAcc = 0; this._fpsFrames = 0;
     }
-    if (this.settings.tickAdaptive(ms)) this.resize(true);
+    // A governor, if one is installed, owns the response to frame time;
+    // otherwise fall back to the settings' own resolution scaler.
+    if (this.onTiming) { if (this.onTiming(ms)) this.resize(true); }
+    else if (this.settings.tickAdaptive(ms)) this.resize(true);
 
     this.renderer.info.reset();
     for (let i = 0; i < this._updaters.length; i++) this._updaters[i](dt, this.elapsed);

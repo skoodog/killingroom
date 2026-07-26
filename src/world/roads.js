@@ -5,6 +5,7 @@
 // cleanly and cost one draw call each.
 
 import { TILE } from '../gfx/textures.js';
+import { DETAIL } from '../gfx/detail.js';
 import { clamp, lerp, rectOverlaps } from '../core/mathx.js';
 import {
   NS_STREETS, EW_STREETS, BOUNDS, LAKE_NORTH, LAKE_SOUTH, WATER_Y,
@@ -53,12 +54,14 @@ export function buildTerrain(mb, cell) {
       const inBlockRows = inGrid && xm > GRID_W && xm < GRID_E
         && cell.z0 < GRID_S && nz1 > GRID_N;
       const tile = inBlockRows ? TILE.CONCRETE_DARK : TILE.GRASS_DRY;
-      mb.ground(x0, cell.z0, x1, nz1, -0.08, tile, [1, 1, 1], 0.34);
+      mb.groundGrid(x0, cell.z0, x1, nz1, -0.08, tile, [1, 1, 1], 0.34, DETAIL.groundCell * 2,
+        (u, v, wx, wz) => 0.92 + 0.10 * Math.sin(wx * 0.031) * Math.cos(wz * 0.027));
     }
     // south of the lake
     const sz0 = Math.max(cell.z0, sb);
     if (sz0 < cell.z1) {
-      mb.ground(x0, sz0, x1, cell.z1, -0.08, TILE.GRASS_DRY, [1, 1, 1], 0.34);
+      mb.groundGrid(x0, sz0, x1, cell.z1, -0.08, TILE.GRASS_DRY, [1, 1, 1], 0.34, DETAIL.groundCell * 2,
+        (u, v, wx, wz) => 0.92 + 0.10 * Math.sin(wx * 0.031) * Math.cos(wz * 0.027));
     }
     // sloped rip-rap bank down to the water on both shores
     if (nb > cell.z0 - 12 && nb < cell.z1 + 12) {
@@ -95,13 +98,27 @@ export function buildStreets(mb, paint, cell, rng) {
     const r = clipRect({ x0: s.x - s.w / 2, x1: s.x + s.w / 2, z0: GRID_N, z1: GRID_S }, cell);
     if (!r) continue;
     const tile = s.freeway ? TILE.CONCRETE : TILE.ASPHALT;
-    mb.ground(r.x0, r.z0, r.x1, r.z1, 0, tile, [1, 1, 1], 0.30);
+    // Roads are crowned: brightest down the middle, grubby in the gutters.
+    // Cheap per-vertex shading, and it stops a long street reading as vinyl.
+    const uw = (r.x0 - (s.x - s.w / 2)) / s.w, uspan = (r.x1 - r.x0) / s.w;
+    mb.groundGrid(r.x0, r.z0, r.x1, r.z1, 0, tile, [1, 1, 1], 0.30, DETAIL.groundCell,
+      (u, v, wx, wz) => {
+        const across = uw + u * uspan;
+        return 0.80 + 0.26 * Math.sin(clamp(across, 0, 1) * Math.PI)
+          + 0.03 * Math.sin(wz * 0.09);
+      });
     stripeNS(paint, s, r, cell);
   }
   for (const s of EW_STREETS) {
     const r = clipRect({ x0: GRID_W, x1: GRID_E, z0: s.z - s.w / 2, z1: s.z + s.w / 2 }, cell);
     if (!r) continue;
-    mb.ground(r.x0, r.z0, r.x1, r.z1, 0.002, TILE.ASPHALT, [1, 1, 1], 0.30);
+    const vw = (r.z0 - (s.z - s.w / 2)) / s.w, vspan = (r.z1 - r.z0) / s.w;
+    mb.groundGrid(r.x0, r.z0, r.x1, r.z1, 0.002, TILE.ASPHALT, [1, 1, 1], 0.30, DETAIL.groundCell,
+      (u, v, wx, wz) => {
+        const across = vw + v * vspan;
+        return 0.80 + 0.26 * Math.sin(clamp(across, 0, 1) * Math.PI)
+          + 0.03 * Math.sin(wx * 0.09);
+      });
     stripeEW(paint, s, r, cell);
   }
 
@@ -248,22 +265,31 @@ export function buildSidewalk(mb, block, cell, rng, opts = {}) {
   const r = clipRect(block, cell);
   if (!r) return;
   const tile = opts.paver ? TILE.BRICK_PAVER : TILE.SIDEWALK;
-  mb.ground(r.x0, r.z0, r.x1, r.z1, CURB_H, tile, [1, 1, 1], opts.paver ? 0.55 : 0.42);
+  mb.groundGrid(r.x0, r.z0, r.x1, r.z1, CURB_H, tile, [1, 1, 1],
+    opts.paver ? 0.55 : 0.42, DETAIL.groundCell,
+    (u, v, wx, wz) => 0.95 + 0.07 * Math.sin(wx * 0.21 + wz * 0.17));
 
   // curb faces (only on the edges that actually lie in this chunk)
   const c = [TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE, TILE.CONCRETE];
   const col = [0.92, 0.92, 0.9];
-  if (block.z0 >= cell.z0 - 0.5 && block.z0 <= cell.z1 + 0.5) {
-    mb.box((r.x0 + r.x1) / 2, CURB_H / 2, block.z0 + 0.09, r.x1 - r.x0, CURB_H, 0.18, c, col, 0.5);
-  }
-  if (block.z1 >= cell.z0 - 0.5 && block.z1 <= cell.z1 + 0.5) {
-    mb.box((r.x0 + r.x1) / 2, CURB_H / 2, block.z1 - 0.09, r.x1 - r.x0, CURB_H, 0.18, c, col, 0.5);
-  }
-  if (block.x0 >= cell.x0 - 0.5 && block.x0 <= cell.x1 + 0.5) {
-    mb.box(block.x0 + 0.09, CURB_H / 2, (r.z0 + r.z1) / 2, 0.18, CURB_H, r.z1 - r.z0, c, col, 0.5);
-  }
-  if (block.x1 >= cell.x0 - 0.5 && block.x1 <= cell.x1 + 0.5) {
-    mb.box(block.x1 - 0.09, CURB_H / 2, (r.z0 + r.z1) / 2, 0.18, CURB_H, r.z1 - r.z0, c, col, 0.5);
+  const gutter = [0.72, 0.72, 0.70];
+  const edges = [
+    [block.z0 >= cell.z0 - 0.5 && block.z0 <= cell.z1 + 0.5,
+      (r.x0 + r.x1) / 2, block.z0 + 0.09, r.x1 - r.x0, 0.18, 0, -1],
+    [block.z1 >= cell.z0 - 0.5 && block.z1 <= cell.z1 + 0.5,
+      (r.x0 + r.x1) / 2, block.z1 - 0.09, r.x1 - r.x0, 0.18, 0, 1],
+    [block.x0 >= cell.x0 - 0.5 && block.x0 <= cell.x1 + 0.5,
+      block.x0 + 0.09, (r.z0 + r.z1) / 2, 0.18, r.z1 - r.z0, -1, 0],
+    [block.x1 >= cell.x0 - 0.5 && block.x1 <= cell.x1 + 0.5,
+      block.x1 - 0.09, (r.z0 + r.z1) / 2, 0.18, r.z1 - r.z0, 1, 0],
+  ];
+  for (const [ok, px, pz, sx, sz, nx, nz] of edges) {
+    if (!ok) continue;
+    mb.box(px, CURB_H / 2, pz, sx, CURB_H, sz, c, col, 0.5);
+    if (DETAIL.geo < 2) continue;
+    // gutter pan: the strip of dark, silted concrete against the kerb face
+    mb.box(px + nx * 0.34, 0.012, pz + nz * 0.34,
+      nx ? 0.5 : sx, 0.024, nz ? 0.5 : sz, c, gutter, 0.6);
   }
 }
 

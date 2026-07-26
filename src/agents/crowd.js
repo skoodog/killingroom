@@ -150,6 +150,7 @@ export class Crowd {
     this.alarmX = 0; this.alarmZ = 0;
     this.copsWanted = 0;
     this.stats = { drawn: 0, alive: 0 };
+    this.distanceScale = 1;   // driven by the performance governor
   }
 
   build() {
@@ -344,7 +345,7 @@ export class Crowd {
   update(dt, elapsed, player, game) {
     const tier = this.settings.tier;
     const px = player.pos.x, pz = player.pos.z;
-    const spawnR = tier.crowdDistance;
+    const spawnR = tier.crowdDistance * this.distanceScale;
     const despawnR = spawnR * 1.35;
 
     this.alarm = Math.max(0, this.alarm - dt * 0.28);
@@ -403,7 +404,7 @@ export class Crowd {
     const buf = this.buffers;
     const animArr = buf.anim.array;
     const instArr = buf.inst.array;
-    const animDist = tier.crowdAnimDistance;
+    const animDist = tier.crowdAnimDistance * this.distanceScale;
     let drawn = 0;
 
     for (const a of this.agents) {

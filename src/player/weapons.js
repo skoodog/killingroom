@@ -263,6 +263,7 @@ export class Weapons {
     this.rng = new RNG('guns');
     this.crowd = null;   // wired after construction
 
+    this.enabled = true;       // false while driving
     this.slot = 1;
     this.ammo = {};
     for (const k of SLOTS) this.ammo[k] = { mag: WEAPONS[k].mag, reserve: WEAPONS[k].reserve };
@@ -343,6 +344,18 @@ export class Weapons {
   update(dt, elapsed) {
     const inp = this.player.input;
     const w = this.weapon;
+
+    // Behind the wheel the hands are on the wheel. Particles, decals and
+    // tracers still tick so anything already in flight resolves.
+    this.rig.visible = this.enabled;
+    this.vmLight.visible = this.enabled;
+    if (!this.enabled) {
+      this.flashT = Math.max(0, this.flashT - dt * 9);
+      this.flash.visible = false;
+      this.updateTracers(dt);
+      this.particles.update(dt);
+      return;
+    }
 
     if (!this.player.dead) {
       for (let i = 0; i < 5; i++) if (inp.hit(`Digit${i + 1}`)) this.select(i);
