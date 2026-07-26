@@ -184,6 +184,70 @@ await page.evaluate(() => {
 });
 await face(1, 'labelled', 1.1, 'back');
 
+// A crowd at the range you actually meet one. Everything above is shot at
+// 0.9 m, which is closer than a pedestrian is ever seen; this is the test
+// that decides whether any of it was worth doing.
+await page.evaluate(async () => {
+  const g = window.__game;
+  const { rollPerson, ARCHETYPE_IDS } = await import('/src/agents/archetypes.js');
+  const c = g.crowd;
+  for (const a of c.agents) c.despawn(a);
+  const b = c.buffers;
+  const ids = [...ARCHETYPE_IDS, 'apd'];
+  let i = 0;
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 5; col++) {
+      const a = c.agents[i];
+      const x = (col - 2) * 1.15 + (row % 2) * 0.5;
+      const z = 300 + row * 1.5;
+      c.spawnAt(a, x, z, null);
+      a.person = rollPerson(c.rng, ids[i % ids.length]);
+      a.x = x; a.y = 0; a.z = z; a.yaw = Math.PI; a.state = 1;
+      a.phase = i * 0.7; a.vx = 0; a.vz = 1.2;
+      c.writeStatic(a);
+      b.inst.array[i * 4] = x;
+      b.inst.array[i * 4 + 1] = 0;
+      b.inst.array[i * 4 + 2] = z;
+      b.inst.array[i * 4 + 3] = Math.PI;
+      b.anim.array[i * 4] = a.phase;
+      b.anim.array[i * 4 + 1] = 1.2;
+      b.anim.array[i * 4 + 2] = a.person.flags;
+      b.anim.array[i * 4 + 3] = 1;
+      i++;
+    }
+  }
+  c.budget = 0;
+  for (let k = i; k < c.agents.length; k++) b.inst.array[k * 4 + 1] = -9999;
+  b.inst.needsUpdate = true; b.anim.needsUpdate = true; b.build.needsUpdate = true;
+  b.colA.needsUpdate = true; b.colB.needsUpdate = true;
+  c.mesh.geometry.instanceCount = c.max;
+});
+for (const [tag, dist, fov] of [['4m', 4, 45], ['9m', 9, 40], ['20m', 20, 32]]) {
+  await page.evaluate(({ dist, fov }) => {
+    const g = window.__game, e = g.engine;
+    g.sky.setHour(10.5);
+    e.sun.color.copy(g.sky.uniforms.uSunColor.value);
+    e.sun.intensity = g.sky.sunIntensity;
+    e.hemi.color.copy(g.sky.hemiSky);
+    e.hemi.groundColor.copy(g.sky.hemiGround);
+    e.hemi.intensity = g.sky.hemiIntensity;
+    e.scene.fog = null;
+    e.renderer.toneMappingExposure = g.sky.exposure;
+    e.setSunDirection(g.sky.sunDir);
+    e.followShadow(0, 0, 300);
+    const cam = e.camera;
+    cam.fov = fov; cam.far = 900; cam.up.set(0, 1, 0);
+    cam.position.set(0, 1.62, 300 - dist);
+    cam.lookAt(0, 1.45, 301);
+    cam.updateProjectionMatrix();
+    g.sky.follow(cam);
+    e.renderer.render(e.scene, cam);
+  }, { dist, fov });
+  await page.waitForTimeout(900);
+  await page.screenshot({ timeout: 240000, path: path.join(OUT, `crowd-${tag}.png`) });
+  console.log('   crowd', tag);
+}
+
 await browser.close();
 await server.close();
 console.log('done → ' + OUT);
