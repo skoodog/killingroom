@@ -66,14 +66,24 @@ for (const s of SPOTS) {
     g.player.yaw = s.yaw;
     g.player.pitch = 0;
     g.player.applyCamera();
-    // Let the population manager fill in around the player and walk a while,
-    // so nobody is caught on their spawn frame.
-    for (let i = 0; i < 160; i++) {
+    // People spawn in an annulus 94-206 m out so nobody appears in front of
+    // you, which means after a teleport it takes a while for anyone to walk
+    // in. Sample the fill-in over two simulated minutes rather than assuming
+    // a number: if the pavement beside you is still empty at 120 s, that is a
+    // distribution problem, not a warm-up problem.
+    const curve = [];
+    const NEAR = (r) => g.crowd.agents.filter(a => a.alive
+      && Math.hypot(a.x - s.x, a.z - s.z) < r).length;
+    for (let i = 0; i < 2400; i++) {
       const t = i * 0.05;
       g.world.update(0.05, t, g.engine.camera, g.sky);
       g.crowd.update(0.05, t, g.player, g);
       g.traffic.update(0.05, t, g.player);
+      if (i === 160 || i === 600 || i === 1200 || i === 2399) {
+        curve.push({ s: +(t).toFixed(0), n12: NEAR(12), n30: NEAR(30), n60: NEAR(60) });
+      }
     }
+    window.__curve = curve;
     const e = g.engine;
     e.sun.color.copy(g.sky.uniforms.uSunColor.value);
     e.sun.intensity = g.sky.sunIntensity;
@@ -86,17 +96,15 @@ for (const s of SPOTS) {
     g.sky.follow(e.camera);
     e.renderer.render(e.scene, e.camera);
 
-    // how many people ended up close enough to judge a face on
-    const near = g.crowd.agents.filter(a => a.alive
-      && Math.hypot(a.x - s.x, a.z - s.z) < 12).length;
-    const mid = g.crowd.agents.filter(a => a.alive
-      && Math.hypot(a.x - s.x, a.z - s.z) < 30).length;
-    return { near, mid, alive: g.crowd.stats.alive };
+    return { curve: window.__curve, alive: g.crowd.stats.alive };
   }, s);
   await page.waitForTimeout(1200);
   await page.screenshot({ timeout: 240000, path: path.join(OUT, `${s.name}.png`) });
-  console.log(`   ${s.name}  ${info.near} within 12 m, ${info.mid} within 30 m,`
-    + ` ${info.alive} alive`);
+  console.log(`   ${s.name}  (${info.alive} alive)`);
+  for (const c of info.curve) {
+    console.log(`      ${String(c.s).padStart(3)}s  ${c.n12} within 12 m,`
+      + `  ${c.n30} within 30 m,  ${c.n60} within 60 m`);
+  }
 }
 
 await browser.close();
