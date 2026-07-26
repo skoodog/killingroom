@@ -183,7 +183,9 @@ export function rollPerson(rng, archetypeId) {
 
   // A bit of extra individual variation on top of the bundle.
   if (rng.chance(0.12)) flags |= ACC.BALLCAP;
-  if (rng.chance(0.10)) flags |= ACC.BEARD;
+  // Only for archetypes that actually carry a beard in one of their own
+  // bundles — otherwise this roll put one on every sorority girl in Austin.
+  if (A.acc.some(a => a & ACC.BEARD) && rng.chance(0.10)) flags |= ACC.BEARD;
   if (rng.chance(0.16)) flags |= ACC.LONGHAIR;
   if ((flags & ACC.HAT) && (flags & ACC.BALLCAP)) flags &= ~ACC.BALLCAP;
 

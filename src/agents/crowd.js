@@ -10,6 +10,8 @@ import { RNG } from '../core/rng.js';
 import { clamp, clamp01, damp, dist2, lerp, TAU, wrapAngle, angleDelta } from '../core/mathx.js';
 import { rayCapsule } from '../physics/collision.js';
 import { buildPedGeometry, patchPedMaterial, makeInstanceBuffers } from './pedmesh.js';
+import { buildFaceTexture } from '../gfx/facetex.js';
+import { DETAIL } from '../gfx/detail.js';
 import { ARCHETYPES, ARCHETYPE_IDS, rollPerson, packColor } from './archetypes.js';
 import { DISTRICTS, PARKS, districtAt, isWater, polyZAt, LAKE_NORTH, LAKE_SOUTH } from '../world/austin.js';
 import { CURB_H } from '../world/roads.js';
@@ -159,7 +161,12 @@ export class Crowd {
     const geo = buildPedGeometry();
     this.buffers = makeInstanceBuffers(geo, this.max);
 
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, fog: true, side: THREE.FrontSide });
+    // The face lives in this texture, not in geometry. It multiplies into the
+    // skin colour, so one small texture serves every skin tone in the crowd.
+    this.faceTex = buildFaceTexture(DETAIL.geo >= 3 ? 256 : 128);
+    const mat = new THREE.MeshLambertMaterial({
+      vertexColors: true, map: this.faceTex, fog: true, side: THREE.FrontSide,
+    });
     patchPedMaterial(mat, false);
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     patchPedMaterial(depth, true);

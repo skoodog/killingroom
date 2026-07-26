@@ -19,15 +19,18 @@ export const BONE = {
   ULEG_L: 7, LLEG_L: 8, ULEG_R: 9, LLEG_R: 10,
 };
 
-// 0–5 read a packed per-instance colour. 6–8 are derived in the shader from
-// the skin and hair colours, so a face costs no extra instance attributes.
-export const PART = {
-  SKIN: 0, HAIR: 1, TOP: 2, BOTTOM: 3, SHOE: 4, ACCENT: 5,
-  EYE: 6, IRIS: 7, LIP: 8,
-};
+export const PART = { SKIN: 0, HAIR: 1, TOP: 2, BOTTOM: 3, SHOE: 4, ACCENT: 5 };
 
 /** `aLod` levels: 0 is always drawn, 1 collapses past `FACE_LOD_DIST`. */
 export const FACE_LOD_DIST = 34;
+
+/**
+ * Within-cell UV for "no texture here". Every face cell has a white border,
+ * so a vertex parked in the corner multiplies by 1 whichever cell the
+ * per-person face variant lands on — which is why nothing but the head needs
+ * to know the face texture exists.
+ */
+const WHITE_UV = 0.012;
 
 // Joint pivots for a 1.0-scale (≈1.78 m) person.
 const HIP_L = [0.105, 0.88, 0];
@@ -64,7 +67,108 @@ function pivotFor(bone) {
 class PedBuilder {
   constructor() {
     this.pos = []; this.nrm = []; this.bone = []; this.part = [];
-    this.pivot = []; this.acc = []; this.lod = []; this.idx = []; this.n = 0;
+    this.pivot = []; this.acc = []; this.lod = []; this.uv = [];
+    this.idx = []; this.n = 0;
+  }
+
+  /**
+   * A lofted volume: `lat` rings of `lon` points stacked between two heights,
+   * radius driven by a profile curve, with normals accumulated from the faces
+   * so the surface shades as a continuous curve instead of a stack of drums.
+   *
+   * This is what the skull is made of. Stacking tapered prisms gives you hard
+   * shading steps at every joint, and no amount of face detail glued on top
+   * survives that — a face has to sit on a smooth surface before it reads as
+   * a face at all.
+   *
+   * When `face` is set, vertices on the front half get UVs into the face
+   * texture; everything else lands in the white corner of the tile, where the
+   * texture is a no-op multiplier.
+   */
+  loft(cx, cy0, cy1, cz, rx, rz, lat, lon, bone, part, opts = {}) {
+    const {
+      profile = () => 1, zShift = () => 0, zScale = () => 1,
+      acc = 0, lod = 0, face = false, capTop = true, capBottom = true,
+      faceV0 = 0, faceV1 = 1,
+      // Per-vertex hooks. `bump` pushes a vertex out along +Z — that is how
+      // the nose, brow ridge and chin exist without being separate objects
+      // stuck to the face. `rMul` scales the radius, which is how the
+      // hairline is cut: hair below it is pulled inside the skull and simply
+      // never seen.
+      bump = null, rMul = null,
+    } = opts;
+    const p = pivotFor(bone);
+    const rows = [];
+
+    for (let i = 0; i <= lat; i++) {
+      const t = i / lat;
+      const y = cy0 + (cy1 - cy0) * t;
+      const r = profile(t), zs = zScale(t), dz = zShift(t);
+      const row = [];
+      for (let j = 0; j < lon; j++) {
+        // phase 0 is +Z, so the front of the head is the start of the ring
+        const ph = (j / lon) * Math.PI * 2;
+        const sx = Math.sin(ph), sz = Math.cos(ph);
+        const rr = r * (rMul ? rMul(t, sx, sz) : 1);
+        row.push({
+          x: cx + sx * rx * rr,
+          y,
+          z: cz + sz * rz * rr * zs + dz + (bump ? bump(t, sx, sz) : 0),
+          nx: 0, ny: 0, nz: 0,
+          // Front hemisphere unwraps across the face; the back, and the very
+          // edges of the front, clamp into the white border of the tile.
+          u: sz > 0 ? 0.5 - sx * rr * 0.58 : WHITE_UV,
+          v: sz > 0 ? faceV0 + (faceV1 - faceV0) * t : WHITE_UV,
+        });
+      }
+      rows.push(row);
+    }
+
+    const add = (a, b, c) => {
+      const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+      const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      for (const q of [a, b, c]) { q.nx += nx; q.ny += ny; q.nz += nz; }
+    };
+    for (let i = 0; i < lat; i++) {
+      for (let j = 0; j < lon; j++) {
+        const k = (j + 1) % lon;
+        add(rows[i][j], rows[i + 1][j], rows[i + 1][k]);
+        add(rows[i][j], rows[i + 1][k], rows[i][k]);
+      }
+    }
+
+    const base = this.n;
+    for (const row of rows) {
+      for (const q of row) {
+        const len = Math.hypot(q.nx, q.ny, q.nz) || 1;
+        this.pos.push(q.x, q.y, q.z);
+        this.nrm.push(q.nx / len, q.ny / len, q.nz / len);
+        this.bone.push(bone); this.part.push(part);
+        this.pivot.push(p[0], p[1], p[2]);
+        this.acc.push(acc); this.lod.push(lod);
+        this.uv.push(face ? q.u : WHITE_UV, face ? q.v : WHITE_UV);
+      }
+    }
+    this.n += (lat + 1) * lon;
+    for (let i = 0; i < lat; i++) {
+      for (let j = 0; j < lon; j++) {
+        const k = (j + 1) % lon;
+        const a = base + i * lon + j, b = base + (i + 1) * lon + j;
+        const c = base + (i + 1) * lon + k, d = base + i * lon + k;
+        this.idx.push(a, b, c, a, c, d);
+      }
+    }
+    // Caps: the profile can pinch to nearly nothing, but "nearly" still shows
+    // as a hole when you are standing next to someone.
+    for (const [want, i, flip] of [[capBottom, 0, true], [capTop, lat, false]]) {
+      if (!want) continue;
+      const ring = base + i * lon;
+      for (let j = 1; j < lon - 1; j++) {
+        if (flip) this.idx.push(ring, ring + j + 1, ring + j);
+        else this.idx.push(ring, ring + j, ring + j + 1);
+      }
+    }
   }
 
   /** A tapered box: sizes may differ top and bottom, which is enough to
@@ -100,6 +204,7 @@ class PedBuilder {
         this.pivot.push(p[0], p[1], p[2]);
         this.acc.push(acc);
         this.lod.push(lod);
+        this.uv.push(WHITE_UV, WHITE_UV);
       }
       this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       this.n += 4;
@@ -122,6 +227,7 @@ class PedBuilder {
       this.bone.push(bone); this.part.push(part);
       this.pivot.push(p[0], p[1], p[2]); this.acc.push(acc);
       this.lod.push(lod);
+      this.uv.push(WHITE_UV, WHITE_UV);
     };
     for (let i = 0; i < n; i++) {
       const a0 = rot + (i / n) * Math.PI * 2;
@@ -167,6 +273,7 @@ class PedBuilder {
     g.setAttribute('aPivot', new THREE.Float32BufferAttribute(this.pivot, 3));
     g.setAttribute('aAcc', new THREE.Float32BufferAttribute(this.acc, 1));
     g.setAttribute('aLod', new THREE.Float32BufferAttribute(this.lod, 1));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     // stock Lambert wants a colour attribute; ours is overwritten in the shader
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(this.n * 3).fill(1), 3));
     g.setIndex(this.idx);
@@ -253,53 +360,124 @@ export function buildPedGeometry() {
   }
 
   // ---- head ------------------------------------------------------------
-  // The skull is five stacked rings rather than two, because the thing that
-  // makes a head read as a head is the curve from cheekbone to crown: the
-  // widest point is at the temples, and everything narrows above and below it.
-  // Chin sits at 1.528 and the crown at 1.762 — a 0.234 m head on a 1.78 m
-  // body, which is the ~1:7.6 ratio adults actually have.
-  b.limb(0, 1.494, 0, 0.046, 0.044, 0.084, LIMB, BONE.HEAD, S, 0, { taper: 1.08 });
-  b.limb(0, 1.559, 0.008, 0.062, 0.074, 0.062, TRUNK, BONE.HEAD, S, 0, { taper: 1.32, capBottom: false }); // jaw
-  b.limb(0, 1.618, 0.004, 0.082, 0.094, 0.056, TRUNK, BONE.HEAD, S, 0, { taper: 1.12, capBottom: false }); // cheek
-  b.limb(0, 1.673, 0.000, 0.092, 0.100, 0.054, TRUNK, BONE.HEAD, S, 0, { taper: 0.98, capBottom: false }); // brow
-  b.limb(0, 1.720, -0.002, 0.090, 0.096, 0.040, TRUNK, BONE.HEAD, S, 0, { taper: 0.82, capBottom: false }); // upper skull
-  b.limb(0, 1.751, -0.004, 0.074, 0.082, 0.022, TRUNK, BONE.HEAD, S, 0, { taper: 0.54, capBottom: false }); // crown
+  // One smooth lofted surface from chin to crown, and the face is painted on
+  // it (see gfx/facetex.js). Modelling eyes and lips as geometry at this size
+  // gives you boxes on a drum; what reads as a face is the shading, and that
+  // belongs in a texture. The nose, brow ridge and chin are displacements of
+  // this same surface, so there is nothing stuck to the face to catch the
+  // light wrongly, and they cost no triangles at all.
+  //
+  // Chin at 1.516, crown at 1.766 — a 0.25 m head on a 1.78 m body.
+  const LAT = DETAIL.geo >= 3 ? 13 : DETAIL.geo >= 2 ? 9 : 5;
+  const LON = sides(16);
+
+  // Piecewise skull profile: pinched at the chin, widest at the temples,
+  // rounding over at the crown.
+  const SKULL = [
+    [0.00, 0.30], [0.08, 0.52], [0.18, 0.68], [0.30, 0.82], [0.42, 0.91],
+    [0.55, 0.985], [0.70, 1.00], [0.82, 0.955], [0.91, 0.84], [0.97, 0.62], [1.00, 0.30],
+  ];
+  const curve = (table) => (t) => {
+    for (let i = 1; i < table.length; i++) {
+      if (t <= table[i][0]) {
+        const [t0, v0] = table[i - 1], [t1, v1] = table[i];
+        const k = (t - t0) / (t1 - t0 || 1);
+        return v0 + (v1 - v0) * (k * k * (3 - 2 * k));   // smoothstep between knots
+      }
+    }
+    return table[table.length - 1][1];
+  };
+  const skull = curve(SKULL);
+  // Anything lofted over a *sub-range* of the head — hair, a beard — has its
+  // own t running 0..1 over its own height, so it has to convert back into
+  // head space before asking the skull how wide it is there. Skip this and a
+  // beard comes out as a lens-shaped band across the mouth, because it reads
+  // the crown radius at chin height.
+  const HEAD_Y0 = 1.516, HEAD_Y1 = 1.766;
+  const atY = (y) => Math.min(1, Math.max(0, (y - HEAD_Y0) / (HEAD_Y1 - HEAD_Y0)));
+  const over = (y0, y1) => (t) => atY(y0 + (y1 - y0) * t);
+
+  // Nose, brow and chin as smooth bumps on the skull. Each is a cosine lobe
+  // in both directions, so it blends into the surrounding surface instead of
+  // creating an edge.
+  const lobe = (v, c, half) => {
+    const k = (v - c) / half;
+    return Math.abs(k) >= 1 ? 0 : Math.cos(k * Math.PI * 0.5);
+  };
+  const faceBump = (t, sx, sz) => {
+    if (sz <= 0) return 0;
+    const front = sz * sz;                       // fades out towards the ears
+    // Centred on the same landmarks facetex.js paints to: brow 0.52,
+    // eye 0.45, nose base 0.325, mouth 0.225. The ridge has to sit under the
+    // painted nose or you get two noses, one of them a smear.
+    const nose = 0.030 * lobe(t, 0.415, 0.110) * Math.pow(lobe(sx, 0, 0.30), 2);
+    const brow = 0.009 * lobe(t, 0.520, 0.070) * lobe(sx, 0, 0.62);
+    const chin = 0.011 * lobe(t, 0.085, 0.095) * lobe(sx, 0, 0.45);
+    const lip = 0.005 * lobe(t, 0.225, 0.060) * lobe(sx, 0, 0.40);
+    return (nose + brow + chin + lip) * front;
+  };
+
+  b.loft(0, 1.516, 1.766, 0, 0.098, 0.107, LAT, LON, BONE.HEAD, S, {
+    profile: skull,
+    zScale: (t) => (t < 0.30 ? 0.86 + t * 0.47 : 1),      // the jaw is shallower than the skull
+    zShift: (t) => 0.011 * (0.38 - t),                    // lower face sits forward of the crown
+    bump: faceBump,
+    face: true,
+  });
+
+  // Neck, lofted too so it meets the jaw without a step.
+  b.loft(0, 1.436, 1.540, 0, 0.048, 0.046, 3, LON, BONE.HEAD, S, {
+    profile: curve([[0, 1.02], [0.6, 0.98], [1, 1.12]]),
+    capTop: false,
+  });
 
   if (detailed) {
-    // Face. All of it is marked lod 1, so it collapses to zero area beyond
-    // conversation range and in the shadow pass — you never pay to rasterise
-    // an eyelid you cannot see.
-    const F = 1;
-    b.box(0, 1.668, 0.094, 0.022, 0.050, 0.024, BONE.HEAD, S, 0, 1, 0, F);   // nose bridge
-    b.box(0, 1.638, 0.100, 0.028, 0.024, 0.032, BONE.HEAD, S, 0, 1, 0, F);   // nose tip
-    b.box(0, 1.556, 0.076, 0.052, 0.030, 0.032, BONE.HEAD, S, 0, 1, 0, F);   // chin
-    b.box(0, 1.594, 0.088, 0.044, 0.011, 0.016, BONE.HEAD, PART.LIP, 0, 1, 0, F);
-    b.box(0, 1.582, 0.087, 0.040, 0.013, 0.016, BONE.HEAD, PART.LIP, 0, 1, 0, F);
+    // Ears are the one feature that has to be geometry: they sit on the
+    // silhouette, where no amount of painted shading can put them.
     for (const sx of [-1, 1]) {
-      b.box(sx * 0.038, 1.664, 0.086, 0.032, 0.017, 0.014, BONE.HEAD, PART.EYE, 0, 1, 0, F);
-      b.box(sx * 0.038, 1.662, 0.094, 0.014, 0.014, 0.008, BONE.HEAD, PART.IRIS, 0, 1, 0, F);
-      b.box(sx * 0.041, 1.686, 0.090, 0.046, 0.013, 0.020, BONE.HEAD, H, 0, 1, 0, F);      // brow
-      b.box(sx * 0.070, 1.652, 0.062, 0.030, 0.026, 0.040, BONE.HEAD, S, 0, 1, 0, F);      // cheekbone
-      b.limb(sx * 0.092, 1.652, -0.002, 0.011, 0.026, 0.050, 6, BONE.HEAD, S, 0,
-        { taper: 0.86, lod: F });                                                          // ear
-      b.box(sx * 0.092, 1.622, 0.002, 0.016, 0.020, 0.024, BONE.HEAD, S, 0, 1, 0, F);      // lobe
+      // Ears run from the brow line down to the base of the nose, same as
+      // they do on a person.
+      b.loft(sx * 0.090, 1.597, 1.650, -0.004, 0.013, 0.030, 3, 6, BONE.HEAD, S, {
+        profile: curve([[0, 0.55], [0.45, 1.0], [1, 0.8]]),
+        lod: 1,
+      });
     }
   }
 
   // ---- hair -------------------------------------------------------------
-  // A cap alone reads as a swim cap. What makes hair read as hair is a
-  // hairline across the forehead, mass at the back of the skull, and the
-  // sideburn edge in front of the ear.
-  b.limb(0, 1.734, -0.004, 0.093, 0.100, 0.064, TRUNK, BONE.HEAD, H, 0, { taper: 0.49 });
-  b.box(0, 1.706, 0.066, 0.150, 0.034, 0.072, BONE.HEAD, H);                  // hairline
-  b.box(0, 1.668, -0.074, 0.160, 0.110, 0.048, BONE.HEAD, H);                 // occiput
-  if (detailed) {
-    for (const sx of [-1, 1]) {
-      b.box(sx * 0.082, 1.668, 0.006, 0.020, 0.062, 0.074, BONE.HEAD, H, 0, 1, 0, 1);
-    }
-  }
-  b.limb(0, 1.520, -0.096, 0.105, 0.058, 0.30, 8, BONE.HEAD, H, ACC_SLOT.LONGHAIR, { taper: 0.92 });
-  b.box(0, 1.560, 0.072, 0.140, 0.082, 0.060, BONE.HEAD, H, ACC_SLOT.BEARD);
+  // A second loft riding just outside the skull, using the same profile so it
+  // follows the head exactly. The hairline is *carved*: anything below it is
+  // pulled inside the skull and never drawn, which gives a clean edge that
+  // dips at the temples the way a real hairline does.
+  const hairline = (sx, sz) => (sz > 0 ? 0.63 + 0.09 * sz * (1 - Math.abs(sx) * 0.75) : 0.40);
+  const hairT = over(1.516, 1.772);
+  b.loft(0, 1.516, 1.772, 0, 0.107, 0.117, LAT, LON, BONE.HEAD, H, {
+    // A 12 mm shell with extra mass over the crown. Three millimetres of
+    // clearance is not hair, it is a scalp with a colour problem.
+    profile: (t) => skull(hairT(t)) * 1.03 + 0.035 * lobe(t, 0.84, 0.34),
+    zShift: (t) => 0.011 * (0.38 - hairT(t)),
+    rMul: (t, sx, sz) => (t < hairline(sx, sz) ? 0.84 : 1),
+    capBottom: false,
+  });
+  // Long hair falls behind the shoulders rather than hugging the skull.
+  b.loft(0, 1.330, 1.700, -0.052, 0.106, 0.070, 4, LON, BONE.HEAD, H, {
+    profile: curve([[0, 0.72], [0.35, 0.95], [1, 1.0]]),
+    rMul: (t, sx, sz) => (sz > 0.25 ? 0.30 : 1),
+    acc: ACC_SLOT.LONGHAIR,
+  });
+  // A beard follows the jaw instead of covering it: a shell over the lower
+  // third of the skull, cut away above the lip line.
+  const beardT = over(1.516, 1.646);
+  b.loft(0, 1.516, 1.646, 0, 0.101, 0.110, 5, LON, BONE.HEAD, H, {
+    profile: (t) => skull(beardT(t)) * 1.025,
+    zScale: (t) => (beardT(t) < 0.30 ? 0.86 + beardT(t) * 0.47 : 1),
+    zShift: (t) => 0.011 * (0.38 - beardT(t)),
+    // cut away above the lip line at the front, so a beard frames the mouth
+    // instead of bricking it over
+    rMul: (t, sx, sz) => (sz > 0.35 && t > 0.60 && Math.abs(sx) < 0.42 ? 0.80 : 1),
+    acc: ACC_SLOT.BEARD,
+    capBottom: false,
+  });
   // ball cap
   b.limb(0, 1.744, -0.002, 0.098, 0.104, 0.080, TRUNK, BONE.HEAD, A, ACC_SLOT.BALLCAP, { taper: 0.78 });
   b.box(0, 1.710, 0.140, 0.185, 0.026, 0.135, BONE.HEAD, A, ACC_SLOT.BALLCAP, 0.85);
@@ -467,21 +645,13 @@ const pedVert = (isDepth) => /* glsl */`
   vec3 _pedNormal = normalize(Y * M * normal);
 
   // ---- colour --------------------------------------------------------
-  vec3 _skin = unpackCol(aColA.x);
-  vec3 _hair = unpackCol(aColA.y);
   vec3 pc;
-  if (aPart < 0.5) pc = _skin;
-  else if (aPart < 1.5) pc = _hair;
+  if (aPart < 0.5) pc = unpackCol(aColA.x);
+  else if (aPart < 1.5) pc = unpackCol(aColA.y);
   else if (aPart < 2.5) pc = unpackCol(aColA.z);
   else if (aPart < 3.5) pc = unpackCol(aColB.x);
   else if (aPart < 4.5) pc = unpackCol(aColB.y);
-  else if (aPart < 5.5) pc = unpackCol(aColB.z);
-  // Sclera is tinted towards the skin so it doesn't glow on a dark face; the
-  // iris borrows from the hair colour, which is why dark-haired people here
-  // tend to have dark eyes without costing a single extra instance attribute.
-  else if (aPart < 6.5) pc = mix(vec3(0.88, 0.87, 0.84), _skin, 0.12);
-  else if (aPart < 7.5) pc = mix(vec3(0.26, 0.17, 0.10), _hair * 0.55 + 0.05, 0.45);
-  else pc = _skin * vec3(0.88, 0.62, 0.60);
+  else pc = unpackCol(aColB.z);
 `;
 
 /**
@@ -502,11 +672,28 @@ export function patchPedMaterial(mat, isDepth = false) {
       v = v
         .replace('#include <beginnormal_vertex>',
           body + '\n  vColor = pc;\n  vec3 objectNormal = _pedNormal;\n')
-        .replace('#include <begin_vertex>', 'vec3 transformed = _pedWorld;');
+        .replace('#include <begin_vertex>', 'vec3 transformed = _pedWorld;')
+        // Pick one of the four painted faces from the person's build, which
+        // is static per person and already on the GPU — so a crowd of varied
+        // faces costs no extra instance data at all. Every cell has a white
+        // border, so the rest of the body lands on a no-op multiplier
+        // whichever cell it gets.
+        .replace('#include <uv_vertex>', /* glsl */`
+          {
+            float _fi = mod(floor(aBuild.x * 977.0 + aBuild.z * 613.0), 4.0);
+            vec2 _fuv = uv * 0.5 + vec2(mod(_fi, 2.0), floor(_fi * 0.5)) * 0.5;
+            #if defined( USE_UV ) || defined( USE_ANISOTROPY )
+              vUv = _fuv;
+            #endif
+            #ifdef USE_MAP
+              vMapUv = _fuv;
+            #endif
+          }
+        `);
     }
     shader.vertexShader = v;
   };
-  mat.customProgramCacheKey = () => (isDepth ? 'ped-depth-v2' : 'ped-v2');
+  mat.customProgramCacheKey = () => (isDepth ? 'ped-depth-v3' : 'ped-v3');
   return mat;
 }
 

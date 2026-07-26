@@ -112,20 +112,33 @@ grids through the parks, with crossings linked at the corners. They steer
 around each other, give you personal space, stop to look at things, and scatter
 when the shooting starts.
 
-They have faces. The skull is five stacked rings — jaw, cheek, brow, upper
-skull, crown — because the thing that makes a head read as a head is the curve
-from cheekbone to temple to crown, and two boxes can't do it. On top of that
-sit eyes with irises, brows, a nose, lips, cheekbones and ears, at the ~1:7.6
-head-to-body ratio adults actually have. The sclera is tinted towards the skin
-so it doesn't glow on a dark face, and the iris borrows from the hair colour,
-so dark-haired people tend to have dark eyes — both derived in the shader,
-neither costing a single extra byte per person.
+They have faces, and the faces are **painted, not modelled**. A head at
+conversation range is about sixty pixels tall and an eye is four of them;
+modelling that with geometry gives you boxes stuck on a drum. What actually
+reads as a face at that size is shading — the dark under the brow, the shadow
+beside the nose, the line between the lips — so the skull is a smooth surface
+and the face is a texture multiplied into the skin.
 
-None of that is paid for at a distance. Every face vertex carries an `aLod`
-bit, and beyond 34 m — or in the shadow pass, at any distance — those vertices
-collapse to zero area. So the crowd is 1,784 triangles a head when you're
-talking to someone and 1,100 when you're not, without a second mesh, a second
-draw call, or a pop.
+The skull is one lofted surface from chin to crown, rings stacked on a profile
+curve with normals accumulated from the faces, so it shades as a continuous
+curve rather than a stack of drums. The nose, brow ridge, chin and lower lip
+are *displacements of that same surface* — cosine lobes blended into it — so
+there is nothing glued to the face to catch the light wrongly, and they cost
+no triangles at all. Only the ears are separate geometry, because they sit on
+the silhouette where no amount of painted shading can put them.
+
+Multiply is the only operation available, so the texture can darken but never
+lighten. That turns out not to matter: everything that reads as a feature at
+distance — lashes, brows, nostrils, lip line, the hollows — is darker than the
+surrounding skin. Painting them as fractions of the skin tone rather than fixed
+colours is also what lets one small texture work across every skin tone in the
+crowd. Four variants sit in a 2×2 grid, picked per person from their build,
+which is already on the GPU — so a crowd of varied faces costs no extra
+instance data. Every cell has a white border, which is how the other 95% of the
+body shares the texture without knowing it exists.
+
+2,642 triangles a head at high, on 3,016 vertices — *fewer* vertices than the
+box-built head it replaced, because a loft shares them between rings.
 
 **All of them are one draw call.** The humanoid is a single box-built mesh
 where every vertex carries a bone id, a body-part id and a joint pivot; the
