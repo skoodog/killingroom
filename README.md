@@ -112,6 +112,20 @@ grids through the parks, with crossings linked at the corners. They steer
 around each other, give you personal space, stop to look at things, and scatter
 when the shooting starts.
 
+**They spawn behind you.** Nobody may materialise in your field of view, so
+ahead of you people appear 94 m out and walk in. That rule applied in every
+direction is why the pavement used to be empty: 320 people spread over a
+94–206 m annulus is 105,000 m² of city, the disc around you fills only by
+diffusion, and the far edge recycles them away again. Measured at Congress and
+6th, two minutes in, it put **two** pedestrians within 60 m and none within 30.
+Behind you they now start from 16 m — turning round to find someone already
+walking there is indistinguishable from their having walked in — and the same
+corner holds 4 within 12 m, 10 within 30 and 25 within 60, stable over two
+minutes. The facing direction comes from the camera, not the player's yaw, so
+it still holds while you're driving.
+
+`node tools/streetcheck.mjs` prints that fill-in curve for four locations.
+
 They have faces, and the faces are **painted, not modelled**. A head at
 conversation range is about sixty pixels tall and an eye is four of them;
 modelling that with geometry gives you boxes stuck on a drum. What actually
