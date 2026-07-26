@@ -85,7 +85,13 @@ const page = await browser.newPage();
 page.setDefaultTimeout(180000);
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+page.on('console', (m) => {
+  // Chromium asks every page for /favicon.ico; a bake harness does not have
+  // one, and that 404 is not a bake failure.
+  if (m.type() === 'error' && !/favicon/i.test(m.location()?.url || '')) {
+    errors.push(m.text());
+  }
+});
 
 await page.goto('http://127.0.0.1:5201/tools/bake.html', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__bakeReady === true);
