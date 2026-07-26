@@ -133,8 +133,8 @@ class PedBuilder {
     for (let i = 0; i < lat; i++) {
       for (let j = 0; j < lon; j++) {
         const k = (j + 1) % lon;
-        add(rows[i][j], rows[i + 1][j], rows[i + 1][k]);
-        add(rows[i][j], rows[i + 1][k], rows[i][k]);
+        add(rows[i][j], rows[i + 1][k], rows[i + 1][j]);
+        add(rows[i][j], rows[i][k], rows[i + 1][k]);
       }
     }
 
@@ -156,7 +156,11 @@ class PedBuilder {
         const k = (j + 1) % lon;
         const a = base + i * lon + j, b = base + (i + 1) * lon + j;
         const c = base + (i + 1) * lon + k, d = base + i * lon + k;
-        this.idx.push(a, b, c, a, c, d);
+        // Rings run x = sin(phi), z = cos(phi) and stack upwards, which makes
+        // (a, b, c) face *inward*. Wound the obvious way, the whole head is
+        // backface-culled and you spend an afternoon looking at the inside of
+        // someone's skull wondering where their face went.
+        this.idx.push(a, c, b, a, d, c);
       }
     }
     // Caps: the profile can pinch to nearly nothing, but "nearly" still shows
@@ -410,7 +414,7 @@ export function buildPedGeometry() {
     // Centred on the same landmarks facetex.js paints to: brow 0.52,
     // eye 0.45, nose base 0.325, mouth 0.225. The ridge has to sit under the
     // painted nose or you get two noses, one of them a smear.
-    const nose = 0.030 * lobe(t, 0.415, 0.110) * Math.pow(lobe(sx, 0, 0.30), 2);
+    const nose = 0.019 * lobe(t, 0.415, 0.110) * Math.pow(lobe(sx, 0, 0.30), 2);
     const brow = 0.009 * lobe(t, 0.520, 0.070) * lobe(sx, 0, 0.62);
     const chin = 0.011 * lobe(t, 0.085, 0.095) * lobe(sx, 0, 0.45);
     const lip = 0.005 * lobe(t, 0.225, 0.060) * lobe(sx, 0, 0.40);

@@ -73,6 +73,21 @@ const who = await page.evaluate(async () => {
     // person 0 gets no accessories at all, so the bare head can be judged
     b.anim.array[k * 4 + 2] = k === 0 ? 0 : c.agents[k].person.flags;
     b.anim.array[k * 4 + 3] = 0;
+    // person 1 gets flat unmistakable colours: skin red, hair blue. Reading
+    // a shape off a render is guesswork until the parts are labelled.
+    if (k === 1) {
+      b.anim.array[k * 4 + 2] = 0;
+      // Unit build, so mesh-space y equals world-space y and the framing
+      // below maps pixels straight onto known heights.
+      b.build.array[k * 3 + 0] = 1;
+      b.build.array[k * 3 + 1] = 1;
+      b.build.array[k * 3 + 2] = 1;
+      b.build.needsUpdate = true;
+      b.colA.array[k * 3 + 0] = 0xff * 65536;          // skin  -> red
+      b.colA.array[k * 3 + 1] = 0xff;                  // hair  -> blue
+      b.colA.array[k * 3 + 2] = 0x00ff00 & 0xffffff;   // top   -> green
+      b.colA.needsUpdate = true;
+    }
   }
   b.inst.needsUpdate = true; b.anim.needsUpdate = true;
   c.mesh.geometry.instanceCount = c.max;
@@ -124,6 +139,50 @@ async function face(i, name, dist, tag) {
 // close enough that the LOD face is present, then past the 34 m cutoff
 for (let i = 0; i < 4; i++) await face(i, who.names[i], 1.1, 'near');
 await face(0, who.names[0], 40, 'far');
+// The labelled head, framed exactly. The head spans y 1.516 (chin) to 1.766
+// (crown); the camera sits at the centre of that, 0.9 m away, fov 22.4 —
+// so the visible band is 1.641 +/- 0.1786 and pixel rows map linearly onto
+// height. No more guessing which stripe is which.
+async function headShot(tag, yaw) {
+  await page.evaluate((yaw) => {
+    const g = window.__game;
+    const e = g.engine;
+    const b = g.crowd.buffers;
+    b.inst.array[1 * 4 + 3] = yaw;
+    b.inst.needsUpdate = true;
+    g.sky.setHour(11.0);
+    e.sun.color.copy(g.sky.uniforms.uSunColor.value);
+    e.sun.intensity = g.sky.sunIntensity;
+    e.hemi.color.copy(g.sky.hemiSky);
+    e.hemi.groundColor.copy(g.sky.hemiGround);
+    e.hemi.intensity = g.sky.hemiIntensity;
+    e.scene.fog = null;
+    e.renderer.toneMappingExposure = g.sky.exposure;
+    e.setSunDirection(g.sky.sunDir);
+    e.followShadow(8, 0, 300);
+    const cam = e.camera;
+    cam.fov = 22.4; cam.far = 900; cam.up.set(0, 1, 0);
+    cam.position.set(8, 1.641, 300 - 0.9);
+    cam.lookAt(8, 1.641, 300);
+    cam.updateProjectionMatrix();
+    g.sky.follow(cam);
+    e.renderer.render(e.scene, cam);
+  }, yaw);
+  await page.waitForTimeout(700);
+  await page.screenshot({ timeout: 240000, path: path.join(OUT, `head-${tag}.png`) });
+  console.log('   head', tag);
+}
+await headShot('front', Math.PI);
+await headShot('side', Math.PI / 2);
+await headShot('rear', 0);
+
+await face(1, 'labelled', 1.1, 'front');
+await page.evaluate(() => {
+  const b = window.__game.crowd.buffers;
+  b.inst.array[1 * 4 + 3] = 0;      // yaw 0: mesh +Z faces away from camera
+  b.inst.needsUpdate = true;
+});
+await face(1, 'labelled', 1.1, 'back');
 
 await browser.close();
 await server.close();
