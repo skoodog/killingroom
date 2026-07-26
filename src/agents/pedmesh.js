@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { DETAIL, sides } from '../gfx/detail.js';
+import { clamp01 } from '../core/mathx.js';
 
 /* ------------------------------------------------------------------ */
 /* bone + part ids                                                     */
@@ -31,6 +32,15 @@ export const FACE_LOD_DIST = 34;
  * to know the face texture exists.
  */
 const WHITE_UV = 0.012;
+
+/**
+ * How far across the face texture one unit of ring angle reaches. Together
+ * with the skull's rx this sets the scale of the unwrap: at rx = 0.080 and a
+ * cheek profile near 0.925, one unit of u is 0.176 m of face, which is what
+ * facetex.js sizes its features against. Change either and the painted eyes
+ * stop matching the head they are painted on.
+ */
+const FACE_U = 0.42;
 
 // Joint pivots for a 1.0-scale (≈1.78 m) person.
 const HIP_L = [0.105, 0.88, 0];
@@ -117,7 +127,7 @@ class PedBuilder {
           nx: 0, ny: 0, nz: 0,
           // Front hemisphere unwraps across the face; the back, and the very
           // edges of the front, clamp into the white border of the tile.
-          u: sz > 0 ? 0.5 - sx * rr * 0.58 : WHITE_UV,
+          u: sz > 0 ? 0.5 - sx * rr * FACE_U : WHITE_UV,
           v: sz > 0 ? faceV0 + (faceV1 - faceV0) * t : WHITE_UV,
         });
       }
@@ -421,7 +431,10 @@ export function buildPedGeometry() {
     return (nose + brow + chin + lip) * front;
   };
 
-  b.loft(0, 1.516, 1.766, 0, 0.098, 0.107, LAT, LON, BONE.HEAD, S, {
+  // 158 mm across and 198 mm front to back, which is an adult head. The first
+  // pass was 196 mm wide — a quarter too broad, and it read as bulbous next
+  // to the shoulders.
+  b.loft(0, 1.516, 1.766, 0, 0.079, 0.099, LAT, LON, BONE.HEAD, S, {
     profile: skull,
     zScale: (t) => (t < 0.30 ? 0.86 + t * 0.47 : 1),      // the jaw is shallower than the skull
     zShift: (t) => 0.011 * (0.38 - t),                    // lower face sits forward of the crown
@@ -441,7 +454,7 @@ export function buildPedGeometry() {
     for (const sx of [-1, 1]) {
       // Ears run from the brow line down to the base of the nose, same as
       // they do on a person.
-      b.loft(sx * 0.090, 1.597, 1.650, -0.004, 0.013, 0.030, 3, 6, BONE.HEAD, S, {
+      b.loft(sx * 0.072, 1.597, 1.650, -0.004, 0.012, 0.028, 3, 6, BONE.HEAD, S, {
         profile: curve([[0, 0.55], [0.45, 1.0], [1, 0.8]]),
         lod: 1,
       });
@@ -453,18 +466,31 @@ export function buildPedGeometry() {
   // follows the head exactly. The hairline is *carved*: anything below it is
   // pulled inside the skull and never drawn, which gives a clean edge that
   // dips at the temples the way a real hairline does.
-  const hairline = (sx, sz) => (sz > 0 ? 0.63 + 0.09 * sz * (1 - Math.abs(sx) * 0.75) : 0.40);
-  const hairT = over(1.516, 1.772);
-  b.loft(0, 1.516, 1.772, 0, 0.107, 0.117, LAT, LON, BONE.HEAD, H, {
-    // A 12 mm shell with extra mass over the crown. Three millimetres of
+  // Expressed in head-t, so it means the same thing regardless of what range
+  // the hair shell itself is lofted over.
+  const hairline = (sx, sz) => (sz > 0 ? 0.645 + 0.092 * sz * (1 - Math.abs(sx) * 0.75) : 0.41);
+  // The shell starts at the jaw, not the chin. Carried all the way down it
+  // ends up under a millimetre inside the skull there, and that margin loses
+  // to shading precision — which shows as hair-coloured fringing along the
+  // jawline of every clean-shaven person in the city.
+  const hairT = over(1.580, 1.772);
+  b.loft(0, 1.580, 1.772, 0, 0.088, 0.109, LAT, LON, BONE.HEAD, H, {
+    // A 10 mm shell with extra mass over the crown. Three millimetres of
     // clearance is not hair, it is a scalp with a colour problem.
-    profile: (t) => skull(hairT(t)) * 1.03 + 0.035 * lobe(t, 0.84, 0.34),
+    profile: (t) => skull(hairT(t)) * 1.03 + 0.030 * lobe(t, 0.84, 0.34),
     zShift: (t) => 0.011 * (0.38 - hairT(t)),
-    rMul: (t, sx, sz) => (t < hairline(sx, sz) ? 0.84 : 1),
+    // Ramped, not switched. A hard threshold puts the hairline wherever the
+    // ring vertices happen to fall, which shows up as an angular notch above
+    // one temple; ramping the shell thickness lets the edge land where it
+    // crosses the scalp, which is a smooth curve at any ring count.
+    rMul: (t, sx, sz) => {
+      const k = clamp01((hairT(t) - (hairline(sx, sz) - 0.07)) / 0.14);
+      return 0.80 + 0.20 * (k * k * (3 - 2 * k));
+    },
     capBottom: false,
   });
   // Long hair falls behind the shoulders rather than hugging the skull.
-  b.loft(0, 1.330, 1.700, -0.052, 0.106, 0.070, 4, LON, BONE.HEAD, H, {
+  b.loft(0, 1.330, 1.700, -0.052, 0.090, 0.070, 4, LON, BONE.HEAD, H, {
     profile: curve([[0, 0.72], [0.35, 0.95], [1, 1.0]]),
     rMul: (t, sx, sz) => (sz > 0.25 ? 0.30 : 1),
     acc: ACC_SLOT.LONGHAIR,
@@ -472,15 +498,21 @@ export function buildPedGeometry() {
   // A beard follows the jaw instead of covering it: a shell over the lower
   // third of the skull, cut away above the lip line.
   const beardT = over(1.516, 1.646);
-  b.loft(0, 1.516, 1.646, 0, 0.101, 0.110, 5, LON, BONE.HEAD, H, {
+  b.loft(0, 1.516, 1.646, 0, 0.083, 0.102, 5, LON, BONE.HEAD, H, {
     profile: (t) => skull(beardT(t)) * 1.025,
     zScale: (t) => (beardT(t) < 0.30 ? 0.86 + beardT(t) * 0.47 : 1),
     zShift: (t) => 0.011 * (0.38 - beardT(t)),
     // cut away above the lip line at the front, so a beard frames the mouth
     // instead of bricking it over
-    rMul: (t, sx, sz) => (sz > 0.35 && t > 0.60 && Math.abs(sx) < 0.42 ? 0.80 : 1),
+    // Ramped on all three axes so the mouth opening is a soft oval rather
+    // than a rectangular bite taken out of the front.
+    rMul: (t, sx, sz) => {
+      if (sz <= 0.30) return 1;
+      const up = clamp01((t - 0.54) / 0.12);
+      const mid = 1 - clamp01((Math.abs(sx) - 0.30) / 0.18);
+      return 1 - 0.22 * up * mid * Math.min(1, (sz - 0.30) / 0.25);
+    },
     acc: ACC_SLOT.BEARD,
-    capBottom: false,
   });
   // ball cap
   b.limb(0, 1.744, -0.002, 0.098, 0.104, 0.080, TRUNK, BONE.HEAD, A, ACC_SLOT.BALLCAP, { taper: 0.78 });
