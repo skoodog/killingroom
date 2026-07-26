@@ -370,12 +370,32 @@ export class Crowd {
       }
     }
 
+    // Which way you are looking, taken from the camera so it stays right
+    // while driving, when the player's own yaw is not what is on screen.
+    let fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const cam = game && game.engine && game.engine.camera;
+    if (cam) {
+      const e = cam.matrixWorld.elements;
+      fx = -e[8]; fz = -e[10];
+      const l = Math.hypot(fx, fz) || 1;
+      fx /= l; fz /= l;
+    }
+
     let toSpawn = Math.min(this.budget - alive, 12);
     let guard = 0;
     while (toSpawn > 0 && guard++ < 80) {
       const ang = this.rng.next() * TAU;
-      const r = lerp(spawnR * 0.45, spawnR * 0.98, this.rng.next());
-      const sx = px + Math.cos(ang) * r, sz = pz + Math.sin(ang) * r;
+      const dx = Math.cos(ang), dz = Math.sin(ang);
+      // Nobody may appear inside your field of view, so ahead of you people
+      // still start 94 m out and walk in. Behind you they can start close —
+      // and they must, because spawning everyone beyond 94 m leaves the
+      // pavement you are standing on permanently empty: 320 people spread
+      // over 105,000 m2 of annulus put two of them within 60 m of Congress
+      // and 6th after two minutes, and the inner disc only ever fills by
+      // diffusion while the far edge recycles them away again.
+      const inView = (dx * fx + dz * fz) > 0.35;
+      const r = lerp(inView ? spawnR * 0.45 : 16, spawnR * 0.98, this.rng.next());
+      const sx = px + dx * r, sz = pz + dz * r;
       const near = this.graph.near(sx, sz, 26, this._tmp);
       if (!near.length) continue;
       const node = near[Math.floor(this.rng.next() * near.length)];
