@@ -1040,7 +1040,18 @@ export function tileGloss(idx) {
  * everything else.
  */
 export function atlasTileSize(tierName) {
-  return tierName === 'low' ? 128 : tierName === 'medium' ? 192 : 256;
+  // Ultra packs 512px tiles into a 4096 atlas. The Higgsfield source art is
+  // 2048 square per material, so at 256 the bake was discarding about 93% of
+  // the detail that was generated; this recovers a quarter of it and is the
+  // single sharpest-looking change available without new art.
+  //
+  // It is not free: 4096 square RGBA is ~67 MB for the albedo and the same
+  // again for the emissive, ~180 MB with mipmaps. That is why it is ultra
+  // only — the tier for machines that asked for it.
+  if (tierName === 'low') return 128;
+  if (tierName === 'medium') return 192;
+  if (tierName === 'ultra') return 512;
+  return 256;
 }
 
 /**

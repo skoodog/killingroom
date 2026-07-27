@@ -1,13 +1,14 @@
 // Bake the Higgsfield material art into the texture atlas.
 //
-//   node tools/bake-art.mjs [--refresh] [--quality 0.92] [--sizes 256,192,128]
+//   node tools/bake-art.mjs [--refresh] [--quality 0.92] [--sizes 512,256,192,128]
 //
 // Downloads the generated textures listed in art/higgsfield.json, then drives
 // a real Chromium to composite them into the atlas the game builds at boot —
 // one output per tile size, which is what makes texture memory scale with the
 // quality tier instead of every machine paying for 2K art.
 //
-//   tile 256 -> 2048x2048 atlas  (high / ultra)
+//   tile 512 -> 4096x4096 atlas  (ultra)
+//   tile 256 -> 2048x2048 atlas  (high)
 //   tile 192 -> 1536x1536 atlas  (medium)
 //   tile 128 -> 1024x1024 atlas  (low)
 //
@@ -32,7 +33,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MANIFEST = path.join(ROOT, 'art', 'higgsfield.json');
 const SRC_DIR = path.join(ROOT, 'art', 'source');
 const OUT_DIR = path.join(ROOT, 'public', 'tex');
-const SIZES = opt('sizes', '256,192,128').split(',').map(s => parseInt(s, 10));
+const SIZES = opt('sizes', '512,256,192,128').split(',').map(s => parseInt(s, 10));
 const QUALITY = parseFloat(opt('quality', '0.92'));
 
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));

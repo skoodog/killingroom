@@ -156,7 +156,9 @@ async function bakeOne(tileSize, entries, images, quality) {
     pctx.drawImage(dayCanvas, gx, gy, tileSize, tileSize, 0, 0, tileSize, tileSize);
     const target = meanRGB(pctx, tileSize);
 
-    const seamless = makeSeamless(images[e.tile], Math.min(1024, images[e.tile].width));
+    // Work at up to 2048 — the source resolution — so a 512px tile is built
+    // from real detail rather than from an already-halved copy.
+    const seamless = makeSeamless(images[e.tile], Math.min(2048, images[e.tile].width));
     const small = downscale(seamless, tileSize);
     const sctx = small.getContext('2d', { willReadFrequently: true });
     matchLuma(sctx, tileSize, target, e.match ?? 0.7);
