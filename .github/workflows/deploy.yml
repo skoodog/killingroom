@@ -1,0 +1,70 @@
+name: Deploy
+
+# Publishes the built game to GitHub Pages. This exists so there is always a
+# live URL to test, without anyone needing a terminal, a CLI, or an account
+# anywhere else. Vercel can sit alongside it quite happily — it deploys from
+# the same repo and the same `npm run build`.
+
+on:
+  push:
+    branches:
+      - claude/fps-gta-austin-procedural-m4i1y8
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; always let the newest win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      # The baked atlas lives in public/tex and Vite copies it into dist. If
+      # it is missing the game still runs — it paints every tile procedurally
+      # — so this reports rather than fails.
+      - name: Report what is shipping
+        run: |
+          if [ -f dist/tex/atlas-256.webp ]; then
+            echo "Shipping the baked Higgsfield atlas:"
+            ls -la dist/tex
+          else
+            echo "No baked atlas — the city will be painted procedurally."
+            echo "Run the 'Bake the material art' workflow to include it."
+          fi
+          du -sh dist
+
+      - uses: actions/configure-pages@v5
+        with:
+          # Turn Pages on the first time this runs, so nobody has to go
+          # hunting through repository settings.
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
