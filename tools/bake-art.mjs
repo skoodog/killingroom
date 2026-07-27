@@ -123,11 +123,15 @@ const server = await createServer({
 });
 await server.listen();
 
+// This image ships its own Chromium at a fixed path; CI and most laptops use
+// the one Playwright installed. Pass executablePath only when we actually
+// found a binary — handing Playwright an undefined path works today by
+// accident, and is not something a CI run should depend on.
 const CHROME = process.env.PLAYWRIGHT_CHROMIUM
   || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium/chrome']
     .find(p => existsSync(p));
 
-const browser = await chromium.launch({ executablePath: CHROME });
+const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
 const page = await browser.newPage();
 page.setDefaultTimeout(180000);
 const errors = [];

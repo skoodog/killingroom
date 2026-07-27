@@ -208,6 +208,19 @@ facade whose window grid has to line up with the geometry behind it.
 
 ### Running the bake
 
+**Normally you don't.** A GitHub Action does it: *Actions → Bake the material
+art → Run workflow*. It also fires by itself whenever the manifest, the bake
+tooling, or the tile list in `src/gfx/textures.js` changes — that last one
+matters, because adding a tile shifts every rect in the atlas and a stale bake
+would map every surface to the wrong picture. The runner downloads the art,
+composites it, checks a real build carries it, and commits `public/tex` back,
+which is also what triggers a redeploy.
+
+CI is the right home for it: the art sits on a CDN that plenty of networks
+refuse to reach, whereas a runner has open egress and a clean Chromium.
+
+By hand, if you want it:
+
 ```bash
 npm run bake-art                                   # fetches from the CDN
 npm run bake-art -- --from ~/Downloads/higgsfield  # or from a local folder

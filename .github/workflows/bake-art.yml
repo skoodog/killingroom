@@ -1,0 +1,84 @@
+name: Bake the material art
+
+# Downloads the Higgsfield textures, composites them into the atlas, and
+# commits the result. CI is the right place for this: the art lives on a CDN
+# that some networks (and every agent sandbox I have met) refuse to reach,
+# whereas a runner has open egress and a clean Chromium.
+#
+# Run it from the Actions tab -> "Bake the material art" -> "Run workflow",
+# or let it fire whenever something that changes the atlas is pushed.
+
+on:
+  push:
+    paths:
+      # the art itself
+      - 'art/higgsfield.json'
+      # the bake
+      - 'tools/bake-art.mjs'
+      - 'tools/bake-page.js'
+      - 'tools/bake.html'
+      # the tile list and layout: adding a tile shifts every rect in the atlas,
+      # so a stale bake would map every surface to the wrong picture
+      - 'src/gfx/textures.js'
+      - '.github/workflows/bake-art.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bake-art-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The 2K originals are ~36 MB and never change unless the manifest does.
+      - name: Cache the source textures
+        uses: actions/cache@v4
+        with:
+          path: art/source
+          key: higgsfield-${{ hashFiles('art/higgsfield.json') }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Bake
+        run: npm run bake-art
+
+      # Cheap insurance: proves the atlas is actually shipped by a real build
+      # rather than merely written to disk.
+      - name: Verify the build carries it
+        run: |
+          npm run build
+          test -f dist/tex/atlas-256.webp
+          test -f dist/tex/atlas.json
+          echo "dist/tex:"
+          ls -la dist/tex
+
+      - name: Commit the atlas
+        run: |
+          if [ -z "$(git status --porcelain public/tex)" ]; then
+            echo "Atlas is byte-identical to the committed one; nothing to do."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/tex
+          # [skip ci] is belt and braces — public/tex is not in the paths
+          # filter above, so this push cannot retrigger the workflow anyway.
+          git commit -m "Bake the Higgsfield material art [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+          echo "Committed. Vercel will redeploy from this push."
