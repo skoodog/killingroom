@@ -3,22 +3,28 @@
   "quality": 0.92,
   "atlases": [
     {
+      "tileSize": 512,
+      "size": 4096,
+      "file": "atlas-512.webp",
+      "bytes": 3006292
+    },
+    {
       "tileSize": 256,
       "size": 2048,
       "file": "atlas-256.webp",
-      "bytes": 816020
+      "bytes": 816124
     },
     {
       "tileSize": 192,
       "size": 1536,
       "file": "atlas-192.webp",
-      "bytes": 465174
+      "bytes": 465112
     },
     {
       "tileSize": 128,
       "size": 1024,
       "file": "atlas-128.webp",
-      "bytes": 238314
+      "bytes": 236220
     }
   ]
 }
