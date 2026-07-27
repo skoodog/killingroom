@@ -27,6 +27,11 @@ const HANDLING = {
   pedicab: { power: 4.2, top: 11, brake: 12, mass: 0.35, grip: 9.0, steer: 0.85, roll: 0.02 },
 };
 
+// Chosen so the sedan (power 12.5, top 44 m/s) sits at equilibrium right at
+// its top speed: 12.5*0.15 = 1.875 ≈ 0.00084*44² + 0.25.
+const DRAG = 0.00084;
+const ROLL = 0.25;
+
 const CAM_MODES = [
   { name: 'chase', dist: 8.2, height: 3.4, look: 2.2, fov: 74 },
   { name: 'close', dist: 5.4, height: 2.5, look: 1.8, fov: 70 },
@@ -190,9 +195,16 @@ export class VehicleSystem {
       else a.vf += H.power * 0.55 * throttle * dt;          // reverse
     }
     if (handbrake) a.vf -= Math.sign(a.vf) * H.brake * 0.55 * dt;
-    // drag and rolling resistance
-    a.vf -= a.vf * Math.abs(a.vf) * 0.0022 * dt * 60;
-    a.vf -= Math.sign(a.vf) * Math.min(Math.abs(a.vf), 2.6 * dt);
+    // Drag and rolling resistance, sized so a car can actually reach the top
+    // speed written in its handling table. The first pass used 0.132·v² and a
+    // flat 2.6 m/s², which balances the sedan's power at 7.8 m/s — 17 mph, out
+    // of a stated 98. Every vehicle in the city was dragging an anchor.
+    //
+    // Solve instead for drag + rolling == the power left at `top`, where the
+    // power curve has fallen to 15% of peak:
+    //   H.power * 0.15  ==  DRAG * top^2 + ROLL
+    a.vf -= a.vf * Math.abs(a.vf) * DRAG * dt;
+    a.vf -= Math.sign(a.vf) * Math.min(Math.abs(a.vf), ROLL * dt);
     a.vf = clamp(a.vf, -top * 0.35, top);
 
     // ---- steering ----------------------------------------------------

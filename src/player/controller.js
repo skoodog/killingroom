@@ -41,9 +41,9 @@ export class Player {
     this.landPunch = 0;
     this._lastY = 0;
 
-    this.speedWalk = 4.0;
-    this.speedSprint = 7.4;
-    this.speedCrouch = 1.9;
+    this.speedWalk = 5.0;
+    this.speedSprint = 9.6;      // a near 2x jump, so sprinting reads as sprinting
+    this.speedCrouch = 2.2;
     this.accel = 46;
     this.airAccel = 7;
     this.gravity = 22;
@@ -120,8 +120,11 @@ export class Player {
     this.crouching = wantCrouch;
     this.sprinting = wantSprint && moving && az > 0.1 && !this.crouching && this.stamina > 0.02;
 
-    if (this.sprinting) this.stamina = clamp01(this.stamina - dt * 0.24);
-    else this.stamina = clamp01(this.stamina + dt * (moving ? 0.16 : 0.34));
+    // 0.24/s meant four seconds of sprint before you were walking again, which
+    // is most of why crossing this city felt like wading. Twelve seconds, and
+    // it comes back quickly.
+    if (this.sprinting) this.stamina = clamp01(this.stamina - dt * 0.085);
+    else this.stamina = clamp01(this.stamina + dt * (moving ? 0.30 : 0.55));
 
     const targetH = this.crouching ? CROUCH_H : HEIGHT;
     // don't stand up into a ceiling
@@ -213,6 +216,20 @@ export class Player {
   }
 
   applyCamera() {
+    // Speed you cannot see is speed you do not feel. Widening the field of
+    // view as you accelerate is the whole trick — without it, walking and
+    // sprinting look identical from behind the eyes no matter what the
+    // velocity says, which is exactly how this played before.
+    if (this.baseFov === undefined) this.baseFov = this.camera.fov;
+    const planar = Math.hypot(this.vel.x, this.vel.z);
+    const over = clamp01((planar - this.speedWalk * 0.8)
+      / Math.max(0.001, this.speedSprint - this.speedWalk * 0.8));
+    const want = this.baseFov * (1 + 0.115 * over);
+    if (Math.abs(this.camera.fov - want) > 0.02) {
+      this.camera.fov += (want - this.camera.fov) * 0.16;
+      this.camera.updateProjectionMatrix();
+    }
+
     const bobY = Math.sin(this.bobT * 2) * 0.045 * this.bobAmp;
     const bobX = Math.cos(this.bobT) * 0.035 * this.bobAmp;
     const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);

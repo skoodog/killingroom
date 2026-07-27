@@ -382,7 +382,7 @@ export function buildPedGeometry() {
   // light wrongly, and they cost no triangles at all.
   //
   // Chin at 1.516, crown at 1.766 — a 0.25 m head on a 1.78 m body.
-  const LAT = DETAIL.geo >= 3 ? 13 : DETAIL.geo >= 2 ? 9 : 5;
+  const LAT = DETAIL.geo >= 4 ? 20 : DETAIL.geo >= 3 ? 13 : DETAIL.geo >= 2 ? 9 : 5;
   const LON = sides(16);
 
   // Piecewise skull profile: pinched at the chin, widest at the temples,

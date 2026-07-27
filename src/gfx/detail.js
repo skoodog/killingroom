@@ -19,7 +19,7 @@ export function configureDetail(tier) {
   DETAIL.geo = tier.geoDetail ?? 1;
   DETAIL.bevel = !!tier.bevel;
   DETAIL.slabBands = tier.slabBands ?? 0;
-  DETAIL.groundCell = DETAIL.geo >= 3 ? 11 : DETAIL.geo >= 2 ? 16 : 1e6;
+  DETAIL.groundCell = DETAIL.geo >= 4 ? 7 : DETAIL.geo >= 3 ? 11 : DETAIL.geo >= 2 ? 16 : 1e6;
   return DETAIL;
 }
 
@@ -28,8 +28,13 @@ export function scaled(base, min = 1) {
   return Math.max(min, Math.round(base * (0.45 + DETAIL.geo * 0.185)));
 }
 
-/** How many sides a round thing gets: 4 at low detail, 12 at full. */
+/**
+ * How many sides a round thing gets: 4 at low, the base count at high, and
+ * nearly double that at ultra — which is where a column, a tree trunk or a
+ * skull stops reading as a faceted prism and starts reading as round.
+ */
 export function sides(base = 8) {
+  if (DETAIL.geo >= 4) return Math.round(base * 1.75);
   if (DETAIL.geo >= 3) return base;
   if (DETAIL.geo >= 2) return Math.max(4, Math.round(base * 0.75));
   return 4;

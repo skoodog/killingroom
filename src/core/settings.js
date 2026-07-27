@@ -133,7 +133,8 @@ export const TIERS = {
     ssao: false,
     anisotropy: 16,
     facadeDetail: 2,
-    geoDetail: 3,
+    geoDetail: 4,         // ultra used to sit at 3, i.e. identical geometry to
+                          // high — it bought draw distance and nothing else
     bevel: true,
     slabBands: 1,
     interiorFloors: true,
