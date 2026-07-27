@@ -1,0 +1,24 @@
+{
+  "generated": "2026-07-26",
+  "quality": 0.92,
+  "atlases": [
+    {
+      "tileSize": 256,
+      "size": 2048,
+      "file": "atlas-256.webp",
+      "bytes": 816020
+    },
+    {
+      "tileSize": 192,
+      "size": 1536,
+      "file": "atlas-192.webp",
+      "bytes": 465174
+    },
+    {
+      "tileSize": 128,
+      "size": 1024,
+      "file": "atlas-128.webp",
+      "bytes": 238314
+    }
+  ]
+}
