@@ -26,6 +26,9 @@ export class Engine {
     this.renderer.shadowMap.enabled = settings.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
+    this.composer = null;
+    this.bloomPass = null;
+    this.bloomEnabled = true;
     this.renderer.info.autoReset = false;
 
     this.maxAnisotropy = Math.min(
@@ -138,6 +141,56 @@ export class Engine {
     this._sunDir = dir.clone().normalize();
   }
 
+  /**
+   * Bloom, for the night skyline.
+   *
+   * `tier.bloom` has been a flag since the first version and nothing ever
+   * read it. Window lights, neon and lamp lenses are emissive but resolve to
+   * flat bright pixels, and the thing that makes a lit window read as *lit*
+   * at distance is the halo around it, not the pixel itself.
+   *
+   * The threshold is deliberately high: this should catch emissive surfaces
+   * and the sun's glint off glass, and leave a white limestone wall at noon
+   * completely alone. Bloom that grabs ordinary daylight looks like a smeared
+   * lens, not a bright city.
+   *
+   * Rendering through a composer means the scene lands in a linear render
+   * target — three skips tone mapping for those — so OutputPass does the tone
+   * map and colour conversion at the end instead of the materials.
+   */
+  async initPost() {
+    if (!this.settings.tier.bloom || this.composer) return;
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] =
+        await Promise.all([
+          import('three/addons/postprocessing/EffectComposer.js'),
+          import('three/addons/postprocessing/RenderPass.js'),
+          import('three/addons/postprocessing/UnrealBloomPass.js'),
+          import('three/addons/postprocessing/OutputPass.js'),
+        ]);
+      const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+      const c = new EffectComposer(this.renderer);
+      c.addPass(new RenderPass(this.scene, this.camera));
+      // Strength and radius are low on purpose. Streetlight pools and
+      // headlights are already additive glow sprites — they *are* a halo — so
+      // a strong bloom halos the halo, and Rainey Street's separate pools of
+      // light merged into one blown-out smear across the whole road. This
+      // should tighten a highlight around a lit window, not relight the city.
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.26, 0.22, 0.90);
+      c.addPass(this.bloomPass);
+      c.addPass(new OutputPass());
+      c.setSize(w, h);
+      this.composer = c;
+    } catch (e) {
+      // Post-processing is a luxury; never let it stop the game booting.
+      console.warn('[gfx] bloom unavailable, rendering direct', e);
+      this.composer = null;
+    }
+  }
+
+  /** Turn bloom off without rebuilding it — the perf governor's cheapest rung. */
+  setBloom(on) { this.bloomEnabled = on; }
+
   resize(force = false) {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
@@ -153,6 +206,11 @@ export class Engine {
 
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
+    // The composer keeps its own targets, and they have to follow the same
+    // adaptive render scale as the canvas — otherwise the perf governor turns
+    // resolution down and the most expensive pass carries on at full size.
+    this.composer?.setPixelRatio(dpr);
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     // Slightly wider FOV on very narrow screens so phones aren't claustrophobic.
     this.camera.updateProjectionMatrix();
@@ -199,7 +257,8 @@ export class Engine {
 
     this.renderer.info.reset();
     for (let i = 0; i < this._updaters.length; i++) this._updaters[i](dt, this.elapsed);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer && this.bloomEnabled !== false) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   get drawCalls() { return this.renderer.info.render.calls; }

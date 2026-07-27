@@ -96,7 +96,15 @@ export const TIERS = {
     windowLights: true,
     reflections: true,
     waterDetail: 2,
-    bloom: true,
+    // Off pending proper HDR tuning. The composer path works and is wired up
+    // (engine.initPost), but routing through a render target moves tone
+    // mapping from the materials to OutputPass, and that shifts the exposure
+    // response of the additive streetlight and headlight glows: Rainey
+    // Street's separate pools of light merge into one smear across the road.
+    // Cutting bloom strength 2.4x barely changed it, which is what identifies
+    // the tone-mapping handoff rather than the bloom as the cause. A washed
+    // out night is worse than no bloom, so it stays off until that is solved.
+    bloom: false,
     ssao: false,
     anisotropy: 8,
     facadeDetail: 2,
@@ -129,7 +137,15 @@ export const TIERS = {
     windowLights: true,
     reflections: true,
     waterDetail: 2,
-    bloom: true,
+    // Off pending proper HDR tuning. The composer path works and is wired up
+    // (engine.initPost), but routing through a render target moves tone
+    // mapping from the materials to OutputPass, and that shifts the exposure
+    // response of the additive streetlight and headlight glows: Rainey
+    // Street's separate pools of light merge into one smear across the road.
+    // Cutting bloom strength 2.4x barely changed it, which is what identifies
+    // the tone-mapping handoff rather than the bloom as the cause. A washed
+    // out night is worse than no bloom, so it stays off until that is solved.
+    bloom: false,
     ssao: false,
     anisotropy: 16,
     facadeDetail: 2,

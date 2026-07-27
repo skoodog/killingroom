@@ -52,6 +52,10 @@ async function main() {
 
   const sky = new Sky(engine.scene, { startHour: 17.6, dayLengthSeconds: 1800 });
 
+  // Bloom needs the tier, so it is set up after the benchmark and before the
+  // world starts eating the frame budget.
+  await engine.initPost();
+
   const world = new World(engine, settings, 'austin-1839');
   // Only now do we know the tier, and therefore which size of baked art to
   // ask for. Missing or unreachable art is not an error — buildAtlas paints
