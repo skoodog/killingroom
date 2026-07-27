@@ -6,6 +6,7 @@ import {
   createCityMaterial, createWaterMaterial, MeshBuilder, setAnisotropy,
 } from '../gfx/materials.js';
 import { configureDetail, DETAIL } from '../gfx/detail.js';
+import { SkyEnvironment } from '../gfx/envmap.js';
 import { RNG } from '../core/rng.js';
 import { clamp, lerp, TAU, rectOverlaps } from '../core/mathx.js';
 import { ColliderWorld } from '../physics/collision.js';
@@ -94,6 +95,23 @@ export class World {
       setAnisotropy(this.atlas.map, this.engine.maxAnisotropy);
       setAnisotropy(this.atlas.emissive, this.engine.maxAnisotropy);
       this.cityMat = createCityMaterial(this.atlas);
+      // Glass reflects the sky. Phong multiplies its envmap contribution by
+      // specularStrength, which the atlas shader already drives from the
+      // per-vertex gloss — so this one assignment gives a curtain wall a full
+      // reflection and brick almost none, with no extra branching.
+      if (DETAIL.geo >= 2) {
+        this.skyEnv = new SkyEnvironment();
+        this.skyEnv.update(this.sky ?? { hour: 12, hemiSky: new THREE.Color(0xb4d2f2),
+          fogColor: new THREE.Color(0xbdd3e8), hemiGround: new THREE.Color(0x7a6f5e) }, true);
+        this.cityMat.envMap = this.skyEnv.texture;
+        this.cityMat.combine = THREE.MixOperation;
+        // Can sit high because the shader's Fresnel term does the falloff:
+        // three multiplies the environment mix by specularStrength, which now
+        // carries gloss * Fresnel. Head-on that lands near 4%, at a grazing
+        // angle near 80% — so a glass face keeps its own colour while its
+        // edges catch the sky. A flat value here bleached the whole skyline.
+        this.cityMat.reflectivity = 0.85;
+      }
       this.cityMat.name = 'city';
       this.paintMat = createCityMaterial(this.atlas, {
         polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6,
@@ -564,6 +582,7 @@ export class World {
   }
 
   update(dt, elapsed, camera, sky) {
+    if (this.skyEnv && sky) this.skyEnv.update(sky);
     // Night lighting: window emissive + streetlight pools.
     const night = sky.nightFactor;
     const street = sky.streetlightFactor;

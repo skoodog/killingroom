@@ -24,6 +24,7 @@ attribute float aGloss;
 varying vec4 vTileRect;
 varying float vGloss;
 varying float vAo;
+varying float vFresnel;
 `;
 
 // Cheap baked-in ambient occlusion, computed per vertex from nothing but the
@@ -47,6 +48,16 @@ vGloss = aGloss;
   float contact = (1.0 - smoothstep(0.0, 3.4, wpos.y)) * vertical;
   float soffit = smoothstep(-0.45, -0.95, wnrm.y);
   vAo = clamp(1.0 - 0.42 * contact - 0.38 * soffit, 0.32, 1.0);
+
+  // Schlick's approximation. Glass reflects about 5% of what is in front of
+  // it when you look straight at it and nearly all of it at a glancing
+  // angle, and that curve is the whole reason a curtain wall looks like
+  // glass. A flat reflectivity cannot express it: set high enough to sparkle
+  // at the edges and it bleaches the face, set low enough to keep the face
+  // and the edges go dead. This gets both.
+  vec3 vdir = normalize(cameraPosition - wpos);
+  float facing = clamp(dot(vdir, wnrm), 0.0, 1.0);
+  vFresnel = 0.05 + 0.95 * pow(1.0 - facing, 5.0);
 }
 `;
 
@@ -54,6 +65,7 @@ const ATLAS_PARS_FRAG = /* glsl */`
 varying vec4 vTileRect;
 varying float vGloss;
 varying float vAo;
+varying float vFresnel;
 
 vec4 sampleAtlas(sampler2D tex, vec2 uv, vec4 rect) {
   // Derivatives come from the UNWRAPPED coordinate so the fract() seam does
@@ -153,16 +165,15 @@ function patchAtlas(mat) {
       // like fifty. Shininess rides up with gloss too: a broad soft lobe on
       // damp asphalt, a tight hot one on a curtain wall.
       .replace('#include <specularmap_fragment>', /* glsl */`
-        float specularStrength = vGloss;
+        float specularStrength = vGloss * vFresnel;
       `)
       .replace('#include <lights_phong_fragment>', /* glsl */`
         #include <lights_phong_fragment>
         material.specularShininess = mix(12.0, 190.0, clamp(vGloss, 0.0, 1.0));
-        material.specularStrength = vGloss;
       `);
   };
   // Force a distinct program cache key from stock Lambert.
-  mat.customProgramCacheKey = () => `city-atlas-v3-${DETAIL.geo >= 2 ? 'phong' : 'lambert'}`;
+  mat.customProgramCacheKey = () => `city-atlas-v4-${DETAIL.geo >= 2 ? 'phong' : 'lambert'}`;
 }
 
 /* ------------------------------------------------------------------ */
