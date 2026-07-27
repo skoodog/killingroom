@@ -23,16 +23,37 @@ attribute vec4 aTile;
 attribute float aGloss;
 varying vec4 vTileRect;
 varying float vGloss;
+varying float vAo;
 `;
 
+// Cheap baked-in ambient occlusion, computed per vertex from nothing but the
+// world position and normal we already have.
+//
+// Two effects, both of which the scene was missing entirely:
+//   - contact darkening where a vertical surface meets the ground, so
+//     buildings sit *in* the street instead of resting on top of it;
+//   - soffit darkening on down-facing surfaces, because the underside of a
+//     balcony or an overhang sees almost no sky and should never be as bright
+//     as the wall above it.
+// Ground planes are untouched: the contact term is scaled by how vertical the
+// surface is, so roads and pavements keep their full value.
 const ATLAS_MAIN_VERT = /* glsl */`
 vTileRect = aTile;
 vGloss = aGloss;
+{
+  vec3 wpos = (modelMatrix * vec4(position, 1.0)).xyz;
+  vec3 wnrm = normalize(mat3(modelMatrix) * normal);
+  float vertical = 1.0 - abs(wnrm.y);
+  float contact = (1.0 - smoothstep(0.0, 3.4, wpos.y)) * vertical;
+  float soffit = smoothstep(-0.45, -0.95, wnrm.y);
+  vAo = clamp(1.0 - 0.42 * contact - 0.38 * soffit, 0.32, 1.0);
+}
 `;
 
 const ATLAS_PARS_FRAG = /* glsl */`
 varying vec4 vTileRect;
 varying float vGloss;
+varying float vAo;
 
 vec4 sampleAtlas(sampler2D tex, vec2 uv, vec4 rect) {
   // Derivatives come from the UNWRAPPED coordinate so the fract() seam does
@@ -59,6 +80,7 @@ const ATLAS_MAP_FRAG = /* glsl */`
   vec4 sampledDiffuseColor = sampleAtlas(map, vMapUv, vTileRect);
   diffuseColor *= sampledDiffuseColor;
 #endif
+  diffuseColor.rgb *= vAo;
 `;
 
 const ATLAS_EMISSIVE_FRAG = /* glsl */`
@@ -140,7 +162,7 @@ function patchAtlas(mat) {
       `);
   };
   // Force a distinct program cache key from stock Lambert.
-  mat.customProgramCacheKey = () => `city-atlas-v2-${DETAIL.geo >= 2 ? 'phong' : 'lambert'}`;
+  mat.customProgramCacheKey = () => `city-atlas-v3-${DETAIL.geo >= 2 ? 'phong' : 'lambert'}`;
 }
 
 /* ------------------------------------------------------------------ */
