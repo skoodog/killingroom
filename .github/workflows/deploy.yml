@@ -49,12 +49,11 @@ jobs:
           fi
           du -sh dist
 
-      - uses: actions/configure-pages@v5
-        with:
-          # Turn Pages on the first time this runs, so nobody has to go
-          # hunting through repository settings.
-          enablement: true
-
+      # No configure-pages step. Its only job here was to switch Pages on, and
+      # the workflow token is not allowed to create a Pages site — it failed
+      # with "Resource not accessible by integration" while the deploy itself
+      # had never been tried. Vite's base is './', so there is no base path to
+      # configure, and the page URL comes from deploy-pages below.
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
