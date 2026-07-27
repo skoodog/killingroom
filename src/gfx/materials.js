@@ -8,6 +8,8 @@
 // into a few dozen draw calls.
 
 import * as THREE from 'three';
+import { tileGloss } from './textures.js';
+import { DETAIL } from './detail.js';
 
 function clampInt(v, lo, hi) {
   const n = Math.round(v);
@@ -18,15 +20,19 @@ function clampInt(v, lo, hi) {
 
 const ATLAS_PARS_VERT = /* glsl */`
 attribute vec4 aTile;
+attribute float aGloss;
 varying vec4 vTileRect;
+varying float vGloss;
 `;
 
 const ATLAS_MAIN_VERT = /* glsl */`
 vTileRect = aTile;
+vGloss = aGloss;
 `;
 
 const ATLAS_PARS_FRAG = /* glsl */`
 varying vec4 vTileRect;
+varying float vGloss;
 
 vec4 sampleAtlas(sampler2D tex, vec2 uv, vec4 rect) {
   // Derivatives come from the UNWRAPPED coordinate so the fract() seam does
@@ -67,7 +73,13 @@ const ATLAS_EMISSIVE_FRAG = /* glsl */`
  * @param {{map:THREE.Texture, emissive:THREE.Texture}} atlas
  */
 export function createCityMaterial(atlas, opts = {}) {
-  const mat = new THREE.MeshLambertMaterial({
+  // Phong costs more than Lambert per fragment, and the low tier exists for
+  // machines that cannot afford it. Everything above gets a specular lobe;
+  // the shader patch below no-ops cleanly on Lambert, which has no such
+  // chunks to replace.
+  const Lit = DETAIL.geo >= 2 ? THREE.MeshPhongMaterial : THREE.MeshLambertMaterial;
+  const mat = new Lit({
+    ...(DETAIL.geo >= 2 ? { specular: new THREE.Color(0x5a5a5a), shininess: 46 } : {}),
     map: atlas.map,
     emissiveMap: atlas.emissive,
     emissive: new THREE.Color(0xffffff),
@@ -85,7 +97,9 @@ export function createCityMaterial(atlas, opts = {}) {
 
 /** Same shader, but double-sided + alpha tested — awnings, signs, fences. */
 export function createCityCutoutMaterial(atlas, opts = {}) {
-  const mat = new THREE.MeshLambertMaterial({
+  const Lit = DETAIL.geo >= 2 ? THREE.MeshPhongMaterial : THREE.MeshLambertMaterial;
+  const mat = new Lit({
+    ...(DETAIL.geo >= 2 ? { specular: new THREE.Color(0x3a3a3a), shininess: 34 } : {}),
     map: atlas.map,
     emissiveMap: atlas.emissive,
     emissive: new THREE.Color(0xffffff),
@@ -111,10 +125,22 @@ function patchAtlas(mat) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + ATLAS_PARS_FRAG)
       .replace('#include <map_fragment>', ATLAS_MAP_FRAG)
-      .replace('#include <emissivemap_fragment>', ATLAS_EMISSIVE_FRAG);
+      .replace('#include <emissivemap_fragment>', ATLAS_EMISSIVE_FRAG)
+      // specularStrength is what Phong multiplies its whole specular term by,
+      // so this is the cheapest possible place to make one material behave
+      // like fifty. Shininess rides up with gloss too: a broad soft lobe on
+      // damp asphalt, a tight hot one on a curtain wall.
+      .replace('#include <specularmap_fragment>', /* glsl */`
+        float specularStrength = vGloss;
+      `)
+      .replace('#include <lights_phong_fragment>', /* glsl */`
+        #include <lights_phong_fragment>
+        material.specularShininess = mix(12.0, 190.0, clamp(vGloss, 0.0, 1.0));
+        material.specularStrength = vGloss;
+      `);
   };
   // Force a distinct program cache key from stock Lambert.
-  mat.customProgramCacheKey = () => 'city-atlas-v1';
+  mat.customProgramCacheKey = () => `city-atlas-v2-${DETAIL.geo >= 2 ? 'phong' : 'lambert'}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -133,6 +159,7 @@ export class MeshBuilder {
     this.uv = [];
     this.col = [];
     this.tile = [];
+    this.gloss = [];
     this.idx = [];
     this._v = 0;
   }
@@ -142,6 +169,9 @@ export class MeshBuilder {
 
   rect(t) {
     const r = this.atlas.rects;
+    // Stash the gloss for this tile so the push sites below can emit it
+    // without every caller having to learn about a new parameter.
+    this._gloss = tileGloss(t);
     return [r[t * 4], r[t * 4 + 1], r[t * 4 + 2], r[t * 4 + 3]];
   }
 
@@ -169,6 +199,7 @@ export class MeshBuilder {
       this.uv.push(uvs[i * 2], uvs[i * 2 + 1]);
       this.col.push(cr, cg, cb);
       this.tile.push(t[0], t[1], t[2], t[3]);
+        this.gloss.push(this._gloss);
     }
     this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     this._v += 4;
@@ -225,6 +256,7 @@ export class MeshBuilder {
         this.uv.push((x - x0) * uvScale, (z - z0) * uvScale);
         this.col.push(cr * k, cg * k, cb * k);
         this.tile.push(t[0], t[1], t[2], t[3]);
+        this.gloss.push(this._gloss);
       }
     }
     this._v += (nx + 1) * (nz + 1);
@@ -340,6 +372,7 @@ export class MeshBuilder {
       this.uv.push(p.x * uvScale, p.z * uvScale);
       this.col.push(cr, cg, cb);
       this.tile.push(t[0], t[1], t[2], t[3]);
+        this.gloss.push(this._gloss);
     }
     this._v += pts.length;
     for (let i = 1; i < pts.length - 1; i++) {
@@ -376,6 +409,7 @@ export class MeshBuilder {
     this.uv.push(...other.uv);
     this.col.push(...other.col);
     this.tile.push(...other.tile);
+    this.gloss.push(...other.gloss);
     for (let i = 0; i < other.idx.length; i++) this.idx.push(other.idx[i] + base);
     this._v += other._v;
   }
@@ -387,6 +421,7 @@ export class MeshBuilder {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('aTile', new THREE.Float32BufferAttribute(this.tile, 4));
+    g.setAttribute('aGloss', new THREE.Float32BufferAttribute(this.gloss, 1));
     g.setIndex(this._v > 65535
       ? new THREE.Uint32BufferAttribute(this.idx, 1)
       : new THREE.Uint16BufferAttribute(this.idx, 1));

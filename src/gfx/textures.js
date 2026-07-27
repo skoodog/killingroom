@@ -1000,6 +1000,40 @@ function makeCanvas(w, h) {
 }
 
 /**
+ * How glossy each surface is, 0 = chalk, 1 = mirror.
+ *
+ * Without this every surface in the city shades identically: a curtain wall
+ * and a lime-rendered wall both come back as matte diffuse, which is the
+ * single biggest reason the place reads as a diagram rather than a
+ * photograph. Glass has to catch the sun and the sky, metal has to have a
+ * hot highlight, and wet asphalt has to streak under a streetlight.
+ *
+ * Anything not listed is matte. Values are deliberately conservative — a
+ * whole city at high gloss looks like wet plastic.
+ */
+const GLOSS = {
+  GLASS_BLUE: 1, GLASS_FROST: 0.55, GLASS_DARK: 1, GLASS_CLEAR: 1,
+  GLASS_BRONZE: 0.95, GLASS_BALCONY: 0.9, GLASS_ATRIUM: 1,
+  // punched facades are part window, part masonry
+  CONCRETE_WIN: 0.42, LIMESTONE_WIN: 0.40, PRECAST_WIN: 0.42, STUCCO_WIN: 0.38,
+  BRICK_RED_WIN: 0.36, BRICK_TAN_WIN: 0.36, BRICK_DARK_WIN: 0.36,
+  STOREFRONT: 0.55, SIXTH_FRONT: 0.30, GARAGE: 0.10,
+  METAL_PANEL: 0.62, CORRUGATED: 0.48, ROOF_METAL: 0.55, CAR_PAINT: 0.85,
+  ASPHALT: 0.20, ASPHALT_WORN: 0.16, SIDEWALK: 0.07, BRICK_PAVER: 0.09,
+  CONCRETE: 0.06, CONCRETE_DARK: 0.07, LIMESTONE: 0.05, BRICK_RED: 0.04,
+  WOOD_DECK: 0.09, WOOD_SIDING: 0.08, ROOF_GRAVEL: 0.03, RUST: 0.12,
+  PAINT_WHITE: 0.26, CANVAS_STRIPE: 0.10, MURAL: 0.12, BILLBOARD: 0.18,
+  SIGN_STREET: 0.30, NEON_SIGN: 0.25, LAMP: 0.20, LAMP_COOL: 0.20,
+  WATER: 1,
+};
+
+/** Gloss for a tile index, 0 when the tile has no entry. */
+export function tileGloss(idx) {
+  const name = TILE_DEFS[idx]?.name;
+  return (name && GLOSS[name]) || 0;
+}
+
+/**
  * Atlas tile size for a quality tier. With 52 tiles on an 8x8 grid this is
  * 2048/1536/1024 px of atlas, i.e. 16/9/4 MB uploaded — the single biggest
  * texture allocation the game makes, so it scales with the tier like
