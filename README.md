@@ -206,6 +206,28 @@ Windows, storefronts, signage and lamp lenses stay procedural on purpose:
 those are structure, not material, and a photograph is the wrong tool for a
 facade whose window grid has to line up with the geometry behind it.
 
+### Running the bake
+
+```bash
+npm run bake-art                                   # fetches from the CDN
+npm run bake-art -- --from ~/Downloads/higgsfield  # or from a local folder
+```
+
+The second form is for anywhere the CDN is unreachable — a corporate proxy, an
+agent sandbox. Download the images however you like and point at the folder:
+they are matched by tile name, by the manifest filename, or by job id, so
+whatever your browser called them will do. `.png`, `.webp` and `.jpg` all work.
+
+It writes `public/tex/`, which is **1.4 MB** and belongs in git:
+
+```bash
+git add public/tex && git commit -m "Bake the Higgsfield material art"
+```
+
+`art/source/` holds the 2K originals and is deliberately ignored — ~36 MB of
+input for 1.4 MB of output. Vite copies `public/` into `dist/` at build time,
+so any static host serves the baked atlas with no further configuration.
+
 ---
 
 ## Playing it

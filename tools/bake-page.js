@@ -176,7 +176,9 @@ async function bakeOne(tileSize, entries, images, quality) {
 window.__bake = async (manifest, tileSizes, quality = 0.92) => {
   const images = {};
   for (const e of manifest.tiles) {
-    images[e.tile] = await loadImage(`/art/source/${e.tile}.png`);
+    // bake-art.mjs resolves each tile to a real file and records it as _src,
+    // because a download may arrive as .webp or under its original name.
+    images[e.tile] = await loadImage(e._src || `/art/source/${e.tile}.png`);
   }
   const out = [];
   for (const ts of tileSizes) out.push(await bakeOne(ts, manifest.tiles, images, quality));
